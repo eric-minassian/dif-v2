@@ -16,16 +16,6 @@ pub fn spawn_terminal<T: 'static>(
     spawn_terminal_inner(window, cx, working_directory, &shell, &["-l"])
 }
 
-#[allow(dead_code)]
-pub fn spawn_claude_terminal<T: 'static>(
-    window: &mut Window,
-    cx: &mut Context<T>,
-    working_directory: &Path,
-) -> Result<Entity<TerminalView>> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    spawn_terminal_inner(window, cx, working_directory, &shell, &["-l", "-c", "claude"])
-}
-
 fn spawn_terminal_inner<T: 'static>(
     _window: &mut Window,
     cx: &mut Context<T>,

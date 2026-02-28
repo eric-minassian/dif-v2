@@ -6,6 +6,7 @@ mod state;
 mod storage;
 mod terminal;
 mod terminal_view;
+mod text_input;
 mod theme;
 mod ui;
 

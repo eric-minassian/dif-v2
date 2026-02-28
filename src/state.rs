@@ -13,6 +13,12 @@ pub struct SavedSession {
     pub worktree_path: Option<PathBuf>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct ProjectSettings {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspace_init_commands: Vec<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SavedProject {
     pub repo_root: PathBuf,
@@ -20,6 +26,8 @@ pub struct SavedProject {
     pub last_known_valid: bool,
     pub sessions: Vec<SavedSession>,
     pub last_selected_session: Option<String>,
+    #[serde(default)]
+    pub settings: ProjectSettings,
 }
 
 impl SavedProject {
@@ -41,6 +49,7 @@ impl SavedProject {
                 worktree_path: None,
             }],
             last_selected_session: Some("1".to_string()),
+            settings: ProjectSettings::default(),
         }
     }
 
@@ -197,6 +206,7 @@ pub struct AppState {
     pub flash_error: Option<String>,
     pub git_poll_generation: u64,
     pub viewing_diff: Option<DiffData>,
+    pub viewing_settings: bool,
     pub left_sidebar_collapsed: bool,
     pub right_sidebar_collapsed: bool,
     pub left_sidebar_width: f32,

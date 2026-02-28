@@ -5,6 +5,7 @@ mod left_panel;
 mod project;
 mod right_panel;
 mod session;
+mod settings;
 mod sidebar;
 mod tab_bar;
 mod titlebar;
@@ -54,6 +55,8 @@ pub struct WorkspaceView {
     commit_input_focus: FocusHandle,
     /// (repo_root, session_id, input entity, event subscription, blur subscription)
     renaming_session: Option<(PathBuf, String, Entity<TextInput>, Subscription, Subscription)>,
+    /// (repo_root, input entity, event subscription) for adding init commands in settings
+    settings_input: Option<(PathBuf, Entity<TextInput>, Subscription)>,
 }
 
 impl WorkspaceView {
@@ -87,6 +90,7 @@ impl WorkspaceView {
             focus_handle,
             commit_input_focus,
             renaming_session: None,
+            settings_input: None,
         };
         if let Some(repo) = this.state.selected_repo.clone() {
             if let Some(session_id) = this.state.selected_session.clone() {
@@ -173,6 +177,42 @@ impl WorkspaceView {
         }
     }
 
+    fn run_init_commands(&mut self, repo_root: &Path, worktree_path: &Path) {
+        let commands = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root.as_path() == repo_root)
+            .map(|p| p.settings.workspace_init_commands.clone())
+            .unwrap_or_default();
+
+        for cmd in &commands {
+            let result = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .current_dir(worktree_path)
+                .env("DIF_WORKTREE_DIR", worktree_path)
+                .env("DIF_REPO_DIR", repo_root)
+                .output();
+
+            match result {
+                Ok(output) if !output.status.success() => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    self.state.flash_error = Some(format!(
+                        "Init command failed: {cmd}\n{stderr}"
+                    ));
+                }
+                Err(error) => {
+                    self.state.flash_error = Some(format!(
+                        "Init command failed: {cmd}\n{error}"
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn selected_project_runtime(&self) -> Option<&ProjectRuntime> {
         let repo = self.state.selected_repo.as_ref()?;
         self.state.runtimes.get(repo)
@@ -200,6 +240,10 @@ impl WorkspaceView {
     }
 
     fn render_center(&self, cx: &mut Context<Self>) -> AnyElement {
+        if self.state.viewing_settings {
+            return self.render_settings_view(cx);
+        }
+
         if let Some(diff_data) = &self.state.viewing_diff {
             return self.render_diff_view(diff_data, cx);
         }
@@ -261,7 +305,9 @@ impl Render for WorkspaceView {
                 this.on_add_side_tab(window, cx);
             }))
             .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
-                if this.state.viewing_diff.is_some() {
+                if this.state.viewing_settings {
+                    this.on_close_settings(cx);
+                } else if this.state.viewing_diff.is_some() {
                     this.on_close_diff(cx);
                 } else {
                     cx.propagate();

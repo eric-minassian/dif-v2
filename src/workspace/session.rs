@@ -39,6 +39,7 @@ impl WorkspaceView {
 
         match git::create_worktree(&repo_root, &display_name, &new_id) {
             Ok(wt_path) => {
+                self.run_init_commands(&repo_root, &wt_path);
                 if let Some(project) = self
                     .state
                     .config

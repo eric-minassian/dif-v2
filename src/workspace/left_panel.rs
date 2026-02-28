@@ -13,16 +13,7 @@ impl WorkspaceView {
 
         panel(PanelSide::Left)
             .w(px(self.state.left_sidebar_width))
-            .child(
-                section_header("Projects")
-                    .py_3()
-                    .child(
-                        button()
-                            .text_xs()
-                            .child("+ Add")
-                            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_add_project)),
-                    ),
-            )
+            .child(section_header("Projects").py_3())
             .child(
                 div()
                     .id("project-list")
@@ -324,6 +315,38 @@ impl WorkspaceView {
 
                         container
                     })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_3()
+                    .py_2()
+                    .border_t_1()
+                    .border_color(t.border_default)
+                    .child(
+                        button()
+                            .text_xs()
+                            .child("+ Add")
+                            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_add_project)),
+                    )
+                    .child(
+                        div()
+                            .id("settings-btn")
+                            .cursor_pointer()
+                            .px_1()
+                            .text_sm()
+                            .text_color(t.text_dim)
+                            .hover(|style| style.text_color(t.text_primary))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, _window, cx| {
+                                    this.on_open_settings(cx);
+                                }),
+                            )
+                            .child("⚙"),
+                    ),
             )
             .into_any_element()
     }

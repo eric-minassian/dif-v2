@@ -1,0 +1,307 @@
+use std::path::PathBuf;
+
+use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
+
+use crate::text_input::{TextInput, TextInputEvent};
+use crate::theme::theme;
+
+use super::WorkspaceView;
+
+impl WorkspaceView {
+    pub(crate) fn on_open_settings(&mut self, cx: &mut Context<Self>) {
+        self.state.viewing_settings = true;
+        cx.notify();
+    }
+
+    pub(crate) fn on_close_settings(&mut self, cx: &mut Context<Self>) {
+        self.state.viewing_settings = false;
+        self.settings_input = None;
+        cx.notify();
+    }
+
+    pub(crate) fn on_add_init_command(
+        &mut self,
+        repo_root: PathBuf,
+        command: String,
+        cx: &mut Context<Self>,
+    ) {
+        if command.is_empty() {
+            return;
+        }
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        {
+            project.settings.workspace_init_commands.push(command);
+        }
+        self.settings_input = None;
+        self.persist_config();
+        cx.notify();
+    }
+
+    pub(crate) fn on_remove_init_command(
+        &mut self,
+        repo_root: PathBuf,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        {
+            if index < project.settings.workspace_init_commands.len() {
+                project.settings.workspace_init_commands.remove(index);
+            }
+        }
+        self.persist_config();
+        cx.notify();
+    }
+
+    pub(crate) fn on_start_add_init_command(
+        &mut self,
+        repo_root: PathBuf,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = cx.new(|cx| TextInput::new(String::new(), window, cx));
+        let repo = repo_root.clone();
+        let event_sub = cx.subscribe(&input, move |this, _input, event, cx| match event {
+            TextInputEvent::Confirm(text) => {
+                this.on_add_init_command(repo.clone(), text.clone(), cx);
+            }
+            TextInputEvent::Cancel => {
+                this.settings_input = None;
+                cx.notify();
+            }
+        });
+        self.settings_input = Some((repo_root, input, event_sub));
+        cx.notify();
+    }
+
+    pub(crate) fn render_settings_view(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = theme();
+
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_3()
+            .py_2()
+            .bg(t.bg_panel)
+            .border_b_1()
+            .border_color(t.border_default)
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_sm()
+                    .child("Settings"),
+            )
+            .child(
+                div()
+                    .id("close-settings")
+                    .cursor_pointer()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .text_color(t.text_dim)
+                    .hover(|style| style.text_color(t.text_primary))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _event, _window, cx| {
+                            this.on_close_settings(cx);
+                        }),
+                    )
+                    .child("✕ Esc"),
+            );
+
+        let mut content = div()
+            .id("settings-content")
+            .flex_1()
+            .min_h_0()
+            .overflow_scroll()
+            .p_4()
+            .flex()
+            .flex_col()
+            .gap_4();
+
+        // Global settings section
+        content = content.child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_sm()
+                        .text_color(t.text_secondary)
+                        .child("Global Settings"),
+                )
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(t.text_muted)
+                        .child("No global settings yet."),
+                ),
+        );
+
+        // Per-project settings
+        for project in &self.state.config.projects {
+            let repo_root = project.repo_root.clone();
+
+            let mut project_section = div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .p_3()
+                .rounded_md()
+                .bg(t.bg_elevated)
+                .child(
+                    div()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_sm()
+                        .child(project.display_name.clone()),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(t.text_dim)
+                        .child(project.repo_root.display().to_string()),
+                );
+
+            // Workspace init commands subsection
+            project_section = project_section
+                .child(
+                    div()
+                        .mt_2()
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(t.text_secondary)
+                        .child("Workspace init commands"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(t.text_dim)
+                        .child("Run after worktree creation. Available env vars: $DIF_WORKTREE_DIR, $DIF_REPO_DIR"),
+                );
+
+            if project.settings.workspace_init_commands.is_empty() {
+                project_section = project_section.child(
+                    div()
+                        .text_xs()
+                        .text_color(t.text_muted)
+                        .child("No init commands configured."),
+                );
+            } else {
+                for (i, cmd) in project.settings.workspace_init_commands.iter().enumerate() {
+                    let remove_repo = repo_root.clone();
+                    let cmd_index = i;
+                    let cmd_row_id =
+                        gpui::ElementId::Name(format!("cmd-{}-{}", project.display_name, i).into());
+
+                    project_section = project_section.child(
+                        div()
+                            .id(cmd_row_id)
+                            .group("cmd-row")
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px_2()
+                            .py_1()
+                            .rounded(px(3.))
+                            .bg(t.bg_surface)
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_xs()
+                                    .text_color(t.text_secondary)
+                                    .overflow_hidden()
+                                    .child(cmd.clone()),
+                            )
+                            .child(
+                                div()
+                                    .id("remove-cmd-btn")
+                                    .cursor_pointer()
+                                    .px_1()
+                                    .text_xs()
+                                    .text_color(t.text_dim)
+                                    .invisible()
+                                    .group_hover("cmd-row", |style| style.visible())
+                                    .hover(|style| style.text_color(t.accent_red))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, _event, _window, cx| {
+                                            this.on_remove_init_command(
+                                                remove_repo.clone(),
+                                                cmd_index,
+                                                cx,
+                                            );
+                                        }),
+                                    )
+                                    .child("×"),
+                            ),
+                    );
+                }
+            }
+
+            // Add command input or button
+            let is_editing = self
+                .settings_input
+                .as_ref()
+                .is_some_and(|(r, _, _)| r == &repo_root);
+
+            if is_editing {
+                let input = self.settings_input.as_ref().unwrap().1.clone();
+                project_section = project_section.child(
+                    div()
+                        .mt_1()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(div().flex_1().min_w_0().child(input)),
+                );
+            } else {
+                let add_repo = repo_root.clone();
+                let add_btn_id = gpui::ElementId::Name(
+                    format!("add-cmd-{}", project.display_name).into(),
+                );
+                project_section = project_section.child(
+                    div()
+                        .id(add_btn_id)
+                        .mt_1()
+                        .cursor_pointer()
+                        .text_xs()
+                        .text_color(t.text_dim)
+                        .hover(|style| style.text_color(t.text_primary))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |this, _event, window, cx| {
+                                this.on_start_add_init_command(add_repo.clone(), window, cx);
+                            }),
+                        )
+                        .child("+ Add command"),
+                );
+            }
+
+            content = content.child(project_section);
+        }
+
+        div()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(header)
+            .child(content)
+            .into_any_element()
+    }
+}

@@ -3,40 +3,6 @@ use std::process::Command;
 
 use super::repo::get_branch_name;
 
-pub fn commit_all(worktree: &Path, message: &str) -> Result<(), String> {
-    // Stage everything
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(worktree)
-        .args(["add", "-A"])
-        .output()
-        .map_err(|e| format!("git add failed: {e}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "git add failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-
-    // Commit
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(worktree)
-        .args(["commit", "-m", message])
-        .output()
-        .map_err(|e| format!("git commit failed: {e}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "git commit failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-
-    Ok(())
-}
-
 pub fn commit_selected(worktree: &Path, files: &[String], message: &str) -> Result<(), String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(worktree).arg("add").arg("--");

@@ -9,8 +9,8 @@ use gpui::{
 use crate::git;
 use crate::picker;
 use crate::state::{
-    AppConfig, AppState, GitChange, ProjectRuntime, SavedProject, SavedSession, SessionRuntime,
-    TerminalTab,
+    AppConfig, AppState, DiffData, DiffLine, DiffLineKind, GitChange, ProjectRuntime, SavedProject,
+    SavedSession, SessionRuntime, TerminalTab,
 };
 use crate::storage;
 use crate::terminal;
@@ -28,6 +28,7 @@ actions!(
         SelectSideTab7,
         SelectSideTab8,
         SelectSideTab9,
+        CloseDiffView,
     ]
 );
 
@@ -279,6 +280,36 @@ impl WorkspaceView {
                 session_runtime.side_tabs.first().map(|t| t.id.clone());
         }
 
+        cx.notify();
+    }
+
+    fn on_open_diff(
+        &mut self,
+        file_path: String,
+        status_code: String,
+        _event: &MouseUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.state.selected_repo.as_ref() else {
+            return;
+        };
+
+        match git::get_file_diff(repo, &file_path, &status_code) {
+            Ok(raw_diff) => {
+                let diff_data = git::parse_unified_diff(&file_path, &raw_diff);
+                self.state.viewing_diff = Some(diff_data);
+            }
+            Err(error) => {
+                self.state.flash_error = Some(format!("Failed to load diff: {error}"));
+            }
+        }
+
+        cx.notify();
+    }
+
+    fn on_close_diff(&mut self, cx: &mut Context<Self>) {
+        self.state.viewing_diff = None;
         cx.notify();
     }
 
@@ -714,7 +745,11 @@ impl WorkspaceView {
             .into_any_element()
     }
 
-    fn render_center(&self) -> AnyElement {
+    fn render_center(&self, cx: &mut Context<Self>) -> AnyElement {
+        if let Some(diff_data) = &self.state.viewing_diff {
+            return self.render_diff_view(diff_data, cx);
+        }
+
         if self.state.selected_repo.is_none() {
             return self
                 .empty_card("Add a Git repository from the left sidebar.")
@@ -754,7 +789,7 @@ impl WorkspaceView {
     }
 
     fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let top = self.render_changes_panel();
+        let top = self.render_changes_panel(cx);
         let bottom = self.render_side_terminal(cx);
 
         div()
@@ -770,7 +805,7 @@ impl WorkspaceView {
             .into_any_element()
     }
 
-    fn render_changes_panel(&self) -> AnyElement {
+    fn render_changes_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         let snapshot = self
             .selected_project_runtime()
             .map(|runtime| &runtime.git_snapshot);
@@ -818,14 +853,23 @@ impl WorkspaceView {
                     } else {
                         changes
                             .iter()
-                            .map(Self::render_change_row)
+                            .map(|change| self.render_change_row(change, cx))
                             .collect::<Vec<_>>()
                     }),
             )
             .into_any_element()
     }
 
-    fn render_change_row(change: &GitChange) -> AnyElement {
+    fn render_change_row(&self, change: &GitChange, cx: &mut Context<Self>) -> AnyElement {
+        let file_path = change.path.clone();
+        let status_code = change.status_code.clone();
+
+        let is_viewing = self
+            .state
+            .viewing_diff
+            .as_ref()
+            .is_some_and(|d| d.file_path == change.path);
+
         div()
             .flex()
             .gap_2()
@@ -833,6 +877,19 @@ impl WorkspaceView {
             .py_2()
             .border_b_1()
             .border_color(gpui::rgb(0x18212f))
+            .bg(if is_viewing {
+                gpui::rgba(0x1d4ed830)
+            } else {
+                gpui::rgba(0x00000000)
+            })
+            .cursor_pointer()
+            .hover(|style| style.bg(gpui::rgba(0x1e293b80)))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |this, event, window, cx| {
+                    this.on_open_diff(file_path.clone(), status_code.clone(), event, window, cx);
+                }),
+            )
             .child(
                 div()
                     .min_w(px(34.))
@@ -847,6 +904,22 @@ impl WorkspaceView {
                     .text_color(gpui::white())
                     .child(change.path.clone()),
             )
+            .when_some(change.additions, |row, adds| {
+                row.child(
+                    div()
+                        .text_xs()
+                        .text_color(gpui::rgb(0x4ade80))
+                        .child(format!("+{adds}")),
+                )
+            })
+            .when_some(change.deletions.filter(|&d| d > 0), |row, dels| {
+                row.child(
+                    div()
+                        .text_xs()
+                        .text_color(gpui::rgb(0xf87171))
+                        .child(format!("-{dels}")),
+                )
+            })
             .into_any_element()
     }
 
@@ -981,6 +1054,66 @@ impl WorkspaceView {
             .into_any_element()
     }
 
+    fn render_diff_view(&self, diff_data: &DiffData, cx: &mut Context<Self>) -> AnyElement {
+        let file_path = diff_data.file_path.clone();
+
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_3()
+            .py_2()
+            .bg(gpui::rgb(0x0f172a))
+            .border_b_1()
+            .border_color(gpui::rgb(0x1e293b))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_color(gpui::rgb(0x94a3b8))
+                            .text_sm()
+                            .child("Diff:"),
+                    )
+                    .child(div().text_color(gpui::white()).child(file_path)),
+            )
+            .child(
+                button()
+                    .child("Close (Esc)")
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _event, _window, cx| {
+                            this.on_close_diff(cx);
+                        }),
+                    ),
+            );
+
+        let diff_rows = div()
+            .id("diff-scroll")
+            .flex_1()
+            .min_h_0()
+            .overflow_scroll()
+            .bg(gpui::rgb(0x020617))
+            .children(
+                diff_data
+                    .lines
+                    .iter()
+                    .map(|line| render_diff_line(line)),
+            );
+
+        div()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(header)
+            .child(diff_rows)
+            .into_any_element()
+    }
+
     fn empty_card(&self, message: &str) -> Div {
         div()
             .flex_1()
@@ -1006,6 +1139,9 @@ impl Render for WorkspaceView {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|this, _: &NewSideTab, window, cx| {
                 this.on_add_side_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
+                this.on_close_diff(cx);
             }))
             .on_action(cx.listener(|this, _: &SelectSideTab1, _w, cx| {
                 this.select_side_tab_by_index(0, cx);
@@ -1046,7 +1182,7 @@ impl Render for WorkspaceView {
                     .min_h_0()
                     .flex()
                     .child(self.render_left_sidebar(cx))
-                    .child(self.render_center())
+                    .child(self.render_center(cx))
                     .child(self.render_right_sidebar(cx)),
             )
     }
@@ -1080,6 +1216,93 @@ fn button() -> Div {
         .bg(gpui::rgb(0x1e293b))
         .text_color(gpui::white())
         .hover(|style| style.bg(gpui::rgb(0x334155)).cursor_pointer())
+}
+
+fn render_diff_line(line: &DiffLine) -> AnyElement {
+    let (left_bg, right_bg) = match line.kind {
+        DiffLineKind::Context => (gpui::rgba(0x00000000), gpui::rgba(0x00000000)),
+        DiffLineKind::Addition => (gpui::rgba(0x00000000), gpui::rgba(0x22c55e18)),
+        DiffLineKind::Deletion => (gpui::rgba(0xef444418), gpui::rgba(0x00000000)),
+        DiffLineKind::Modified => (gpui::rgba(0xef444418), gpui::rgba(0x22c55e18)),
+    };
+
+    let left_text_color = match line.kind {
+        DiffLineKind::Deletion | DiffLineKind::Modified => gpui::rgb(0xfca5a5),
+        _ => gpui::rgb(0xcbd5e1),
+    };
+
+    let right_text_color = match line.kind {
+        DiffLineKind::Addition | DiffLineKind::Modified => gpui::rgb(0x86efac),
+        _ => gpui::rgb(0xcbd5e1),
+    };
+
+    let line_num_color = gpui::rgb(0x475569);
+
+    div()
+        .flex()
+        .w_full()
+        .text_sm()
+        .child(
+            // Left half
+            div()
+                .flex_1()
+                .flex()
+                .bg(left_bg)
+                .child(
+                    div()
+                        .w(px(48.))
+                        .text_right()
+                        .px_2()
+                        .text_color(line_num_color)
+                        .text_xs()
+                        .child(
+                            line.left_number
+                                .map(|n| n.to_string())
+                                .unwrap_or_default(),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .px_2()
+                        .text_color(left_text_color)
+                        .child(line.left_text.clone()),
+                ),
+        )
+        .child(
+            // Divider
+            div().w(px(1.)).bg(gpui::rgb(0x1e293b)),
+        )
+        .child(
+            // Right half
+            div()
+                .flex_1()
+                .flex()
+                .bg(right_bg)
+                .child(
+                    div()
+                        .w(px(48.))
+                        .text_right()
+                        .px_2()
+                        .text_color(line_num_color)
+                        .text_xs()
+                        .child(
+                            line.right_number
+                                .map(|n| n.to_string())
+                                .unwrap_or_default(),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .px_2()
+                        .text_color(right_text_color)
+                        .child(line.right_text.clone()),
+                ),
+        )
+        .into_any_element()
 }
 
 fn pick_initial_selection(config: &AppConfig) -> Option<PathBuf> {

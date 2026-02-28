@@ -77,6 +77,31 @@ pub struct GitChange {
     pub path: String,
     pub status_code: String,
     pub sort_key: String,
+    pub additions: Option<u32>,
+    pub deletions: Option<u32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DiffLine {
+    pub left_number: Option<u32>,
+    pub left_text: String,
+    pub right_number: Option<u32>,
+    pub right_text: String,
+    pub kind: DiffLineKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DiffLineKind {
+    Context,
+    Addition,
+    Deletion,
+    Modified,
+}
+
+#[derive(Clone, Debug)]
+pub struct DiffData {
+    pub file_path: String,
+    pub lines: Vec<DiffLine>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -134,4 +159,5 @@ pub struct AppState {
     pub runtimes: HashMap<PathBuf, ProjectRuntime>,
     pub flash_error: Option<String>,
     pub git_poll_generation: u64,
+    pub viewing_diff: Option<DiffData>,
 }

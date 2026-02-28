@@ -2,13 +2,14 @@ use gpui::{App, AppContext, Application, KeyBinding, WindowOptions};
 
 use crate::storage;
 use crate::ui::{
-    NewSideTab, SelectSideTab1, SelectSideTab2, SelectSideTab3, SelectSideTab4, SelectSideTab5,
-    SelectSideTab6, SelectSideTab7, SelectSideTab8, SelectSideTab9, WorkspaceView,
+    CloseDiffView, NewSideTab, SelectSideTab1, SelectSideTab2, SelectSideTab3, SelectSideTab4,
+    SelectSideTab5, SelectSideTab6, SelectSideTab7, SelectSideTab8, SelectSideTab9, WorkspaceView,
 };
 
 pub fn run() {
     Application::new().run(|cx: &mut App| {
         cx.bind_keys([
+            KeyBinding::new("escape", CloseDiffView, None),
             KeyBinding::new("cmd-t", NewSideTab, None),
             KeyBinding::new("cmd-1", SelectSideTab1, None),
             KeyBinding::new("cmd-2", SelectSideTab2, None),

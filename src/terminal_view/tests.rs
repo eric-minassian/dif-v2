@@ -258,7 +258,7 @@ fn responds_to_osc_11_default_background_color_query() {
         })
         .unwrap();
 
-    let expected = osc_color_response(11, (0x00, 0x00, 0x00));
+    let expected = osc_color_response(11, (0x1e, 0x1e, 0x1e));
     assert_eq!(response, expected.as_bytes());
 }
 
@@ -312,7 +312,7 @@ fn responds_to_osc_11_across_chunk_boundaries() {
         })
         .unwrap();
 
-    let expected = osc_color_response(11, (0x00, 0x00, 0x00));
+    let expected = osc_color_response(11, (0x1e, 0x1e, 0x1e));
     assert_eq!(response, expected.as_bytes());
 }
 
@@ -327,7 +327,7 @@ fn responds_to_osc_11_query_terminated_by_bel() {
         })
         .unwrap();
 
-    let expected = osc_color_response(11, (0x00, 0x00, 0x00));
+    let expected = osc_color_response(11, (0x1e, 0x1e, 0x1e));
     assert_eq!(response, expected.as_bytes());
 }
 

@@ -3,9 +3,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, AnyElement, ClickEvent, Context, CursorStyle, Entity, Focusable, FocusHandle,
-    MouseButton, MouseMoveEvent, MouseUpEvent, Subscription, Window, div, prelude::*, px,
-    uniform_list,
+    Hsla, KeyDownEvent, actions, AnyElement, ClickEvent, Context, CursorStyle, Entity, Focusable,
+    FocusHandle, MouseButton, MouseMoveEvent, MouseUpEvent, Subscription, Window, div, prelude::*,
+    px, uniform_list,
 };
 
 use crate::components::{button, empty_state, panel, section_header, PanelSide};
@@ -13,9 +13,10 @@ use crate::components::{button, empty_state, panel, section_header, PanelSide};
 use crate::git;
 use crate::picker;
 use crate::state::{
-    AppConfig, AppState, DiffData, GitChange, ProjectRuntime, ResizingSidebar, SavedProject,
-    SavedSession, SessionRuntime, SplitLine, SplitLineKind, TerminalTab,
-    DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
+    ActionPhase, AppConfig, AppState, BranchStatus, DiffData, GitChange, ProjectRuntime,
+    ResizingSidebar, SavedProject, SavedSession, SessionRuntime, SplitLine, SplitLineKind,
+    TerminalTab, DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH,
+    MIN_SIDEBAR_WIDTH,
 };
 use crate::storage;
 use crate::terminal;
@@ -45,6 +46,7 @@ actions!(
 pub struct WorkspaceView {
     state: AppState,
     focus_handle: FocusHandle,
+    commit_input_focus: FocusHandle,
     /// (repo_root, session_id, input entity, event subscription, blur subscription)
     renaming_session: Option<(PathBuf, String, Entity<TextInput>, Subscription, Subscription)>,
 }
@@ -72,11 +74,13 @@ impl WorkspaceView {
             .and_then(|repo| pick_initial_session(&state.config, repo));
 
         let focus_handle = cx.focus_handle();
+        let commit_input_focus = cx.focus_handle();
         focus_handle.focus(window, cx);
 
         let mut this = Self {
             state,
             focus_handle,
+            commit_input_focus,
             renaming_session: None,
         };
         if let Some(repo) = this.state.selected_repo.clone() {
@@ -542,6 +546,374 @@ impl WorkspaceView {
         }
     }
 
+    fn on_toggle_staged(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.as_ref() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(repo) else {
+            return;
+        };
+        if runtime.staged_files.contains(&path) {
+            runtime.staged_files.remove(&path);
+        } else {
+            runtime.staged_files.insert(path);
+        }
+        cx.notify();
+    }
+
+    fn on_dismiss_action_error(&mut self, cx: &mut Context<Self>) {
+        if let Some(repo) = self.state.selected_repo.as_ref() {
+            if let Some(runtime) = self.state.runtimes.get_mut(repo) {
+                runtime.action_phase = ActionPhase::Idle;
+            }
+        }
+        cx.notify();
+    }
+
+    fn on_commit_input_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.state.selected_repo.as_ref().cloned() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+
+        // Use key_char for composed characters, fallback to key
+        let key_char = event.keystroke.key_char.as_deref();
+        let key = &event.keystroke.key;
+
+        let has_platform = event.keystroke.modifiers.platform;
+        let has_ctrl = event.keystroke.modifiers.control;
+
+        match key.as_str() {
+            "backspace" if !has_platform && !has_ctrl => {
+                runtime.commit_message.pop();
+            }
+            "backspace" if has_platform || has_ctrl => {
+                runtime.commit_message.clear();
+            }
+            "escape" => {
+                self.focus_handle.focus(_window, cx);
+            }
+            _ if has_platform || has_ctrl => {
+                return; // let shortcuts propagate
+            }
+            _ => {
+                // Insert the typed character if available
+                if let Some(ch) = key_char {
+                    if !ch.is_empty() && ch.chars().all(|c: char| !c.is_control()) {
+                        runtime.commit_message.push_str(ch);
+                    } else {
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
+        }
+
+        cx.notify();
+    }
+
+    fn on_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+        let files: Vec<String> = runtime.staged_files.iter().cloned().collect();
+        if files.is_empty() {
+            return;
+        }
+        let message = if runtime.commit_message.trim().is_empty() {
+            "wip".to_string()
+        } else {
+            runtime.commit_message.clone()
+        };
+        runtime.action_phase = ActionPhase::Working("Committing...".into());
+        cx.notify();
+
+        let working_dir = self
+            .state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(&repo, sid))
+            .unwrap_or_else(|| repo.clone());
+
+        let view = cx.entity().clone();
+        let repo_clone = repo.clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                let dir = working_dir.clone();
+
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        let files = files.clone();
+                        async move { git::commit_selected(&dir, &files, &message) }
+                    })
+                    .await;
+
+                if let Err(e) = result {
+                    cx.update(|_, cx| {
+                        view.update(cx, |this, cx| {
+                            if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                                rt.action_phase = ActionPhase::Error(format!("Commit: {e}"));
+                            }
+                            cx.notify();
+                        })
+                    }).ok();
+                    return;
+                }
+
+                // Push
+                let push_result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        async move { git::push(&dir) }
+                    })
+                    .await;
+
+                cx.update(|_, cx| {
+                    view.update(cx, |this, cx| {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                            match push_result {
+                                Ok(()) => {
+                                    rt.staged_files.clear();
+                                    rt.action_phase = ActionPhase::Idle;
+                                }
+                                Err(e) => {
+                                    rt.action_phase = ActionPhase::Error(format!("Push: {e}"));
+                                }
+                            }
+                        }
+                        cx.notify();
+                    })
+                }).ok();
+            })
+            .detach();
+    }
+
+    fn on_amend(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+        let files: Vec<String> = runtime.staged_files.iter().cloned().collect();
+        if files.is_empty() {
+            return;
+        }
+        runtime.action_phase = ActionPhase::Working("Amending...".into());
+        cx.notify();
+
+        let working_dir = self
+            .state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(&repo, sid))
+            .unwrap_or_else(|| repo.clone());
+
+        let view = cx.entity().clone();
+        let repo_clone = repo.clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                let dir = working_dir.clone();
+
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        let files = files.clone();
+                        async move { git::amend_selected(&dir, &files) }
+                    })
+                    .await;
+
+                if let Err(e) = result {
+                    cx.update(|_, cx| {
+                        view.update(cx, |this, cx| {
+                            if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                                rt.action_phase = ActionPhase::Error(format!("Amend: {e}"));
+                            }
+                            cx.notify();
+                        })
+                    }).ok();
+                    return;
+                }
+
+                // Force push
+                let push_result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        async move { git::force_push(&dir) }
+                    })
+                    .await;
+
+                cx.update(|_, cx| {
+                    view.update(cx, |this, cx| {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                            match push_result {
+                                Ok(()) => {
+                                    rt.staged_files.clear();
+                                    rt.action_phase = ActionPhase::Idle;
+                                }
+                                Err(e) => {
+                                    rt.action_phase = ActionPhase::Error(format!("Push: {e}"));
+                                }
+                            }
+                        }
+                        cx.notify();
+                    })
+                }).ok();
+            })
+            .detach();
+    }
+
+    fn on_create_pr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+        runtime.action_phase = ActionPhase::Working("Creating PR...".into());
+        cx.notify();
+
+        let working_dir = self
+            .state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(&repo, sid))
+            .unwrap_or_else(|| repo.clone());
+
+        let view = cx.entity().clone();
+        let repo_clone = repo.clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                let dir = working_dir.clone();
+
+                let branch_name = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        async move { git::get_branch_name(&dir) }
+                    })
+                    .await
+                    .unwrap_or_else(|_| "changes".to_string());
+
+                let pr_result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        async move { git::create_pr(&dir, &branch_name) }
+                    })
+                    .await;
+
+                cx.update(|_, cx| {
+                    view.update(cx, |this, cx| {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                            match pr_result {
+                                Ok(_) => {
+                                    rt.action_phase = ActionPhase::Idle;
+                                }
+                                Err(e) => {
+                                    rt.action_phase = ActionPhase::Error(format!("PR: {e}"));
+                                }
+                            }
+                        }
+                        cx.notify();
+                    })
+                }).ok();
+            })
+            .detach();
+    }
+
+    fn on_rebase(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+        runtime.action_phase = ActionPhase::Working("Merging...".into());
+        cx.notify();
+
+        let working_dir = self
+            .state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(&repo, sid))
+            .unwrap_or_else(|| repo.clone());
+
+        let view = cx.entity().clone();
+        let repo_clone = repo.clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                let dir = working_dir.clone();
+
+                let merge_result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        async move { git::merge_pr_rebase(&dir) }
+                    })
+                    .await;
+
+                cx.update(|_, cx| {
+                    view.update(cx, |this, cx| {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                            match merge_result {
+                                Ok(()) => {
+                                    rt.action_phase = ActionPhase::Idle;
+                                }
+                                Err(e) => {
+                                    rt.action_phase = ActionPhase::Error(format!("Merge: {e}"));
+                                }
+                            }
+                        }
+                        cx.notify();
+                    })
+                }).ok();
+            })
+            .detach();
+    }
+
+    fn on_close_session(&mut self, _event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(session_id) = self.state.selected_session.clone() else {
+            return;
+        };
+        // Reuse on_delete_session logic with a synthetic event
+        self.on_delete_session(repo, session_id, _event, window, cx);
+    }
 
     fn select_side_tab_by_index(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(repo) = self.state.selected_repo.as_ref() else {
@@ -719,12 +1091,25 @@ impl WorkspaceView {
 
         window
             .spawn(cx, async move |cx| {
+                let mut tick: u32 = 0;
                 loop {
                     let dir = git_dir.clone();
                     let snapshot = cx
                         .background_executor()
                         .spawn(async move { git::collect_changes(&dir) })
                         .await;
+
+                    // Every 5th tick (~10s) or on first tick, also collect branch status
+                    let branch_status = if tick % 5 == 0 {
+                        let dir = git_dir.clone();
+                        Some(
+                            cx.background_executor()
+                                .spawn(async move { git::collect_branch_status(&dir) })
+                                .await,
+                        )
+                    } else {
+                        None
+                    };
 
                     let keep_running = cx
                         .update(|_, cx| {
@@ -741,7 +1126,16 @@ impl WorkspaceView {
                                     .entry(repo_root.clone())
                                     .or_insert_with(ProjectRuntime::default);
 
-                                if apply_git_snapshot(runtime, &snapshot) {
+                                let mut changed = apply_git_snapshot(runtime, &snapshot);
+
+                                if let Some(status) = branch_status {
+                                    if runtime.branch_status != status {
+                                        runtime.branch_status = status;
+                                        changed = true;
+                                    }
+                                }
+
+                                if changed {
                                     cx.notify();
                                 }
 
@@ -754,6 +1148,7 @@ impl WorkspaceView {
                         break;
                     }
 
+                    tick = tick.wrapping_add(1);
                     cx.background_executor().timer(Duration::from_secs(2)).await;
                 }
             })
@@ -1261,14 +1656,37 @@ impl WorkspaceView {
 
     fn render_changes_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
-        let snapshot = self
-            .selected_project_runtime()
-            .map(|runtime| &runtime.git_snapshot);
+        let project_runtime = self.selected_project_runtime();
+        let snapshot = project_runtime.map(|runtime| &runtime.git_snapshot);
         let changes = snapshot
             .map(|snapshot| snapshot.changes.as_slice())
             .unwrap_or(&[]);
         let error = snapshot.and_then(|snapshot| snapshot.last_error.as_ref());
         let count = changes.len();
+        let has_changes = !changes.is_empty();
+
+        let staged_files = project_runtime
+            .map(|rt| &rt.staged_files)
+            .cloned()
+            .unwrap_or_default();
+        let staged_count = staged_files.len();
+        let branch_status = project_runtime
+            .map(|rt| &rt.branch_status)
+            .cloned()
+            .unwrap_or_default();
+        let action_phase = project_runtime
+            .map(|rt| &rt.action_phase)
+            .cloned()
+            .unwrap_or_default();
+        let commit_message = project_runtime
+            .map(|rt| rt.commit_message.clone())
+            .unwrap_or_default();
+
+        let panel_action = derive_panel_action(has_changes, staged_count, &branch_status);
+        let is_busy = matches!(action_phase, ActionPhase::Working(_));
+
+        // Build the action button for the header bar
+        let header_action = self.render_header_action_button(&panel_action, &action_phase, cx);
 
         div()
             .flex_1()
@@ -1278,15 +1696,25 @@ impl WorkspaceView {
             .border_b_1()
             .border_color(t.border_default)
             .child(
-                section_header("Changes").when(count > 0, |header| {
-                    header.child(
+                section_header("Changes")
+                    .child(
                         div()
-                            .text_xs()
-                            .text_color(t.text_dim)
-                            .child(format!("{count}")),
-                    )
-                }),
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .when(count > 0, |el| {
+                                el.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(t.text_dim)
+                                        .child(format!("{count}")),
+                                )
+                            })
+                            .child(header_action),
+                    ),
             )
+            // Status bar (working / error)
+            .child(self.render_action_status(&action_phase, cx))
             .when_some(error, |p, message| {
                 p.child(
                     div()
@@ -1300,6 +1728,10 @@ impl WorkspaceView {
                         .child(message.clone()),
                 )
             })
+            // Commit message input (shown when action is Commit)
+            .when(panel_action == PanelAction::Commit && !is_busy, |el| {
+                el.child(self.render_commit_input(&commit_message, cx))
+            })
             .child(
                 div()
                     .id("changes-list")
@@ -1307,27 +1739,216 @@ impl WorkspaceView {
                     .min_h_0()
                     .overflow_scroll()
                     .children(if changes.is_empty() {
-                        vec![div()
+                        let mut info_items: Vec<AnyElement> = vec![div()
                             .px_3()
                             .py_2()
                             .text_xs()
                             .text_color(t.text_dim)
-                            .child("Working tree clean".to_string())
-                            .into_any_element()]
+                            .child("Working tree clean")
+                            .into_any_element()];
+
+                        if branch_status.commits_ahead > 0 {
+                            let n = branch_status.commits_ahead;
+                            let label = if n == 1 {
+                                "1 commit ahead".to_string()
+                            } else {
+                                format!("{n} commits ahead")
+                            };
+                            info_items.push(
+                                div()
+                                    .px_3()
+                                    .pb_1()
+                                    .text_xs()
+                                    .text_color(t.text_dim)
+                                    .child(label)
+                                    .into_any_element(),
+                            );
+                        }
+
+                        if let Some(url) = &branch_status.pr_url {
+                            info_items.push(
+                                div()
+                                    .px_3()
+                                    .pb_1()
+                                    .text_xs()
+                                    .text_color(t.text_dim)
+                                    .child(url.clone())
+                                    .into_any_element(),
+                            );
+                        }
+
+                        info_items
                     } else {
                         changes
                             .iter()
-                            .map(|change| self.render_change_row(change, cx))
+                            .map(|change| self.render_change_row(change, &staged_files, cx))
                             .collect::<Vec<_>>()
                     }),
             )
             .into_any_element()
     }
 
-    fn render_change_row(&self, change: &GitChange, cx: &mut Context<Self>) -> AnyElement {
+    fn render_header_action_button(
+        &self,
+        action: &PanelAction,
+        phase: &ActionPhase,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let t = theme();
+        let is_busy = matches!(phase, ActionPhase::Working(_));
+
+        let (button_id, label, bg_color): (&str, &str, Hsla) = match action {
+            PanelAction::Commit => ("action-commit", "Commit", t.accent_green),
+            PanelAction::Amend => ("action-amend", "Amend", t.accent_green),
+            PanelAction::CreatePR => ("action-create-pr", "Create PR", t.accent_green),
+            PanelAction::Rebase => ("action-rebase", "Rebase & Merge", t.accent_green),
+            PanelAction::CloseSession => ("action-close", "Close Session", t.accent_red),
+            PanelAction::None => return div().into_any_element(),
+        };
+
+        let action_clone = action.clone();
+
+        div()
+            .id(button_id)
+            .px_2()
+            .py(px(2.))
+            .rounded_md()
+            .text_xs()
+            .bg(bg_color)
+            .text_color(gpui::rgb(0x1e1e1e))
+            .when(is_busy, |el| el.opacity(0.5))
+            .when(!is_busy, |el| {
+                el.cursor_pointer()
+                    .hover(|style| style.opacity(0.85))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, event, window, cx| {
+                            match action_clone {
+                                PanelAction::Commit => this.on_commit(window, cx),
+                                PanelAction::Amend => this.on_amend(window, cx),
+                                PanelAction::CreatePR => this.on_create_pr(window, cx),
+                                PanelAction::Rebase => this.on_rebase(window, cx),
+                                PanelAction::CloseSession => {
+                                    this.on_close_session(event, window, cx)
+                                }
+                                PanelAction::None => {}
+                            }
+                        }),
+                    )
+            })
+            .child(label)
+            .into_any_element()
+    }
+
+    fn render_action_status(&self, phase: &ActionPhase, cx: &mut Context<Self>) -> AnyElement {
+        let t = theme();
+
+        match phase {
+            ActionPhase::Idle => div().into_any_element(),
+            ActionPhase::Working(label) => div()
+                .mx_3()
+                .mt_1()
+                .mb_1()
+                .px_2()
+                .py_1()
+                .text_xs()
+                .rounded_md()
+                .bg(gpui::rgba(0xffffff08))
+                .text_color(t.text_muted)
+                .child(label.clone())
+                .into_any_element(),
+            ActionPhase::Error(msg) => div()
+                .id("action-error")
+                .mx_3()
+                .mt_1()
+                .mb_1()
+                .px_2()
+                .py_1()
+                .text_xs()
+                .rounded_md()
+                .bg(t.error_bg)
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_color(t.accent_red)
+                        .child(msg.clone()),
+                )
+                .child(
+                    div()
+                        .id("dismiss-action-err")
+                        .text_color(t.text_dim)
+                        .cursor_pointer()
+                        .hover(|s| s.text_color(t.text_primary))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _event, _window, cx| {
+                                this.on_dismiss_action_error(cx);
+                            }),
+                        )
+                        .child("x"),
+                )
+                .into_any_element(),
+        }
+    }
+
+    fn render_commit_input(&self, message: &str, cx: &mut Context<Self>) -> AnyElement {
+        let t = theme();
+        let display_text = if message.is_empty() {
+            "wip".to_string()
+        } else {
+            message.to_string()
+        };
+        let is_placeholder = message.is_empty();
+
+        div()
+            .mx_3()
+            .mt_1()
+            .mb_1()
+            .child(
+                div()
+                    .id("commit-input")
+                    .w_full()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(t.border_subtle)
+                    .bg(gpui::rgba(0xffffff08))
+                    .text_color(if is_placeholder {
+                        t.text_dim
+                    } else {
+                        t.text_primary
+                    })
+                    .cursor_text()
+                    .track_focus(&self.commit_input_focus)
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _event, window, cx| {
+                            this.commit_input_focus.focus(window, cx);
+                            cx.notify();
+                        }),
+                    )
+                    .on_key_down(cx.listener(Self::on_commit_input_key_down))
+                    .child(display_text),
+            )
+            .into_any_element()
+    }
+
+    fn render_change_row(
+        &self,
+        change: &GitChange,
+        staged_files: &std::collections::HashSet<String>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let t = theme();
         let file_path = change.path.clone();
         let status_code = change.status_code.clone();
+        let is_staged = staged_files.contains(&change.path);
 
         let is_viewing = self
             .state
@@ -1343,6 +1964,10 @@ impl WorkspaceView {
 
         let change_row_id =
             gpui::ElementId::Name(format!("change-{}", change.path).into());
+        let checkbox_id =
+            gpui::ElementId::Name(format!("chk-{}", change.path).into());
+
+        let toggle_path = change.path.clone();
 
         div()
             .id(change_row_id)
@@ -1357,14 +1982,37 @@ impl WorkspaceView {
             } else {
                 t.transparent
             })
-            .cursor_pointer()
-            .hover(|style| style.bg(t.hover_overlay))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |this, event, window, cx| {
-                    this.on_open_diff(file_path.clone(), status_code.clone(), event, window, cx);
-                }),
+            // Checkbox
+            .child(
+                div()
+                    .id(checkbox_id)
+                    .w(px(14.))
+                    .h(px(14.))
+                    .flex_shrink_0()
+                    .rounded(px(3.))
+                    .border_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .when(is_staged, |el| {
+                        el.bg(t.accent_green)
+                            .border_color(t.accent_green)
+                            .text_color(gpui::rgb(0x1e1e1e))
+                            .text_xs()
+                            .child("✓")
+                    })
+                    .when(!is_staged, |el| {
+                        el.border_color(t.text_dim)
+                    })
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, _event, _window, cx| {
+                            this.on_toggle_staged(toggle_path.clone(), cx);
+                        }),
+                    ),
             )
+            // Status code
             .child(
                 div()
                     .text_xs()
@@ -1373,19 +2021,35 @@ impl WorkspaceView {
                     .flex_shrink_0()
                     .child(change.status_code.clone()),
             )
+            // File path (clickable for diff)
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .overflow_hidden()
                     .text_sm()
+                    .cursor_pointer()
+                    .hover(|style| style.bg(t.hover_overlay))
                     .text_color(if is_viewing {
                         t.text_primary
                     } else {
                         t.text_secondary
                     })
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, event, window, cx| {
+                            this.on_open_diff(
+                                file_path.clone(),
+                                status_code.clone(),
+                                event,
+                                window,
+                                cx,
+                            );
+                        }),
+                    )
                     .child(change.path.clone()),
             )
+            // +/- stats on hover
             .child(
                 div()
                     .flex()
@@ -1731,6 +2395,39 @@ fn resize_handle(
         )
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum PanelAction {
+    Commit,
+    Amend,
+    CreatePR,
+    Rebase,
+    CloseSession,
+    None,
+}
+
+fn derive_panel_action(
+    has_changes: bool,
+    staged_count: usize,
+    status: &BranchStatus,
+) -> PanelAction {
+    if status.pr_merged {
+        return PanelAction::CloseSession;
+    }
+    if has_changes && staged_count > 0 && status.commits_ahead == 0 {
+        return PanelAction::Commit;
+    }
+    if has_changes && staged_count > 0 && status.commits_ahead > 0 {
+        return PanelAction::Amend;
+    }
+    if !has_changes && status.commits_ahead > 0 && status.pr_url.is_none() {
+        return PanelAction::CreatePR;
+    }
+    if !has_changes && status.pr_url.is_some() && !status.pr_merged {
+        return PanelAction::Rebase;
+    }
+    PanelAction::None
+}
+
 fn refresh_project_validity(projects: &mut [SavedProject]) {
     for project in projects {
         project.last_known_valid = git::is_valid_repo(&project.repo_root);
@@ -1748,6 +2445,23 @@ fn apply_git_snapshot(
         Ok(changes) => {
             let changed = runtime.git_snapshot.changes != *changes
                 || runtime.git_snapshot.last_error.is_some();
+
+            // Collect current file paths from the new snapshot
+            let current_paths: std::collections::HashSet<String> =
+                changes.iter().map(|c| c.path.clone()).collect();
+
+            // Auto-stage new files that weren't in the previous snapshot
+            let old_paths: std::collections::HashSet<String> =
+                runtime.git_snapshot.changes.iter().map(|c| c.path.clone()).collect();
+            for path in &current_paths {
+                if !old_paths.contains(path) {
+                    runtime.staged_files.insert(path.clone());
+                }
+            }
+
+            // Remove staged paths that no longer appear in changes
+            runtime.staged_files.retain(|p| current_paths.contains(p));
+
             runtime.git_snapshot.changes = changes.clone();
             runtime.git_snapshot.last_error = None;
             changed

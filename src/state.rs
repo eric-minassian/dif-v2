@@ -125,6 +125,21 @@ pub struct GitSnapshot {
     pub last_error: Option<String>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BranchStatus {
+    pub commits_ahead: u32,
+    pub pr_url: Option<String>,
+    pub pr_merged: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum ActionPhase {
+    #[default]
+    Idle,
+    Working(String),
+    Error(String),
+}
+
 pub struct TerminalTab {
     pub id: String,
     pub name: String,
@@ -154,6 +169,10 @@ impl Default for SessionRuntime {
 pub struct ProjectRuntime {
     pub session_runtimes: HashMap<String, SessionRuntime>,
     pub git_snapshot: GitSnapshot,
+    pub staged_files: HashSet<String>,
+    pub branch_status: BranchStatus,
+    pub action_phase: ActionPhase,
+    pub commit_message: String,
 }
 
 impl Default for ProjectRuntime {
@@ -161,6 +180,10 @@ impl Default for ProjectRuntime {
         Self {
             session_runtimes: HashMap::new(),
             git_snapshot: GitSnapshot::default(),
+            staged_files: HashSet::new(),
+            branch_status: BranchStatus::default(),
+            action_phase: ActionPhase::default(),
+            commit_message: String::new(),
         }
     }
 }

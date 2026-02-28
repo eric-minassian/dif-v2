@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/eric-minassian/dif-v2/compare/v0.4.0...v0.5.0) (2026-02-28)
+
+
+### Features
+
+* github integration ([fa212f3](https://github.com/eric-minassian/dif-v2/commit/fa212f3bd961c8c4d83041e449c484b39265b292))
+
 ## [0.4.0](https://github.com/eric-minassian/dif-v2/compare/v0.3.1...v0.4.0) (2026-02-28)
 
 

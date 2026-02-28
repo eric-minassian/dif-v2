@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, AnyElement, Context, FocusHandle, MouseButton, MouseUpEvent, Window, div,
-    prelude::*, px, uniform_list,
+    actions, AnyElement, Context, CursorStyle, FocusHandle, MouseButton, MouseMoveEvent,
+    MouseUpEvent, Window, div, prelude::*, px, uniform_list,
 };
 
 use crate::components::{button, empty_state, panel, section_header, PanelSide};
@@ -12,9 +12,9 @@ use crate::components::{button, empty_state, panel, section_header, PanelSide};
 use crate::git;
 use crate::picker;
 use crate::state::{
-    AppConfig, AppState, DiffData, GitChange, ProjectRuntime, SavedProject, SavedSession,
-    SessionRuntime, SplitLine, SplitLineKind, TerminalTab, LEFT_SIDEBAR_WIDTH,
-    RIGHT_SIDEBAR_WIDTH,
+    AppConfig, AppState, DiffData, GitChange, ProjectRuntime, ResizingSidebar, SavedProject,
+    SavedSession, SessionRuntime, SplitLine, SplitLineKind, TerminalTab,
+    DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };
 use crate::storage;
 use crate::terminal;
@@ -47,8 +47,16 @@ pub struct WorkspaceView {
 
 impl WorkspaceView {
     pub fn new(config: AppConfig, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let left_w = config
+            .left_sidebar_width
+            .unwrap_or(DEFAULT_LEFT_SIDEBAR_WIDTH);
+        let right_w = config
+            .right_sidebar_width
+            .unwrap_or(DEFAULT_RIGHT_SIDEBAR_WIDTH);
         let mut state = AppState {
             config,
+            left_sidebar_width: left_w,
+            right_sidebar_width: right_w,
             ..AppState::default()
         };
         refresh_project_validity(&mut state.config.projects);
@@ -414,6 +422,54 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    fn on_resize_drag(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(side) = self.state.resizing_sidebar else {
+            return;
+        };
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.state.resizing_sidebar = None;
+            self.state.config.left_sidebar_width = Some(self.state.left_sidebar_width);
+            self.state.config.right_sidebar_width = Some(self.state.right_sidebar_width);
+            self.persist_config();
+            cx.notify();
+            return;
+        }
+        let x = f32::from(event.position.x);
+        match side {
+            ResizingSidebar::Left => {
+                let w = x.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+                self.state.left_sidebar_width = w;
+            }
+            ResizingSidebar::Right => {
+                let window_width = f32::from(window.viewport_size().width);
+                let w =
+                    (window_width - x).clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+                self.state.right_sidebar_width = w;
+            }
+        }
+        cx.notify();
+    }
+
+    fn on_resize_end(
+        &mut self,
+        _event: &MouseUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.resizing_sidebar.is_some() {
+            self.state.resizing_sidebar = None;
+            self.state.config.left_sidebar_width = Some(self.state.left_sidebar_width);
+            self.state.config.right_sidebar_width = Some(self.state.right_sidebar_width);
+            self.persist_config();
+            cx.notify();
+        }
+    }
+
     fn on_refresh_git_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(repo) = self.state.selected_repo.clone() {
             self.start_git_poll(repo, window, cx);
@@ -691,7 +747,7 @@ impl WorkspaceView {
         let selected_session = self.state.selected_session.as_ref();
 
         panel(PanelSide::Left)
-            .w(px(LEFT_SIDEBAR_WIDTH))
+            .w(px(self.state.left_sidebar_width))
             .child(
                 section_header("Projects")
                     .py_3()
@@ -1089,7 +1145,7 @@ impl WorkspaceView {
         let bottom = self.render_side_terminal(cx);
 
         panel(PanelSide::Right)
-            .w(px(RIGHT_SIDEBAR_WIDTH))
+            .w(px(self.state.right_sidebar_width))
             .child(top)
             .child(bottom)
             .into_any_element()
@@ -1468,6 +1524,10 @@ impl Render for WorkspaceView {
             self.render_right_sidebar(cx)
         };
 
+        let is_resizing = self.state.resizing_sidebar.is_some();
+        let left_collapsed = self.state.left_sidebar_collapsed;
+        let right_collapsed = self.state.right_sidebar_collapsed;
+
         div()
             .id("workspace")
             .track_focus(&self.focus_handle)
@@ -1517,6 +1577,9 @@ impl Render for WorkspaceView {
             .on_action(cx.listener(|this, _: &SelectSideTab9, _w, cx| {
                 this.select_side_tab_by_index(8, cx);
             }))
+            .on_mouse_move(cx.listener(Self::on_resize_drag))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_resize_end))
+            .when(is_resizing, |el| el.cursor(CursorStyle::ResizeLeftRight))
             .size_full()
             .flex()
             .flex_col()
@@ -1530,10 +1593,38 @@ impl Render for WorkspaceView {
                     .min_h_0()
                     .flex()
                     .child(left)
+                    .when(!left_collapsed, |el| {
+                        el.child(resize_handle("left-resize", cx, ResizingSidebar::Left))
+                    })
                     .child(self.render_center(cx))
+                    .when(!right_collapsed, |el| {
+                        el.child(resize_handle("right-resize", cx, ResizingSidebar::Right))
+                    })
                     .child(right),
             )
     }
+}
+
+fn resize_handle(
+    id: &'static str,
+    cx: &mut Context<WorkspaceView>,
+    side: ResizingSidebar,
+) -> impl IntoElement {
+    let t = theme();
+    div()
+        .id(id)
+        .w(px(2.))
+        .h_full()
+        .flex_shrink_0()
+        .cursor(CursorStyle::ResizeLeftRight)
+        .hover(|style| style.bg(t.accent))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _, _window, cx| {
+                this.state.resizing_sidebar = Some(side);
+                cx.notify();
+            }),
+        )
 }
 
 fn refresh_project_validity(projects: &mut [SavedProject]) {

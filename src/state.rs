@@ -69,13 +69,19 @@ impl SavedProject {
     }
 }
 
-pub const LEFT_SIDEBAR_WIDTH: f32 = 240.0;
-pub const RIGHT_SIDEBAR_WIDTH: f32 = 320.0;
+pub const DEFAULT_LEFT_SIDEBAR_WIDTH: f32 = 240.0;
+pub const DEFAULT_RIGHT_SIDEBAR_WIDTH: f32 = 320.0;
+pub const MIN_SIDEBAR_WIDTH: f32 = 140.0;
+pub const MAX_SIDEBAR_WIDTH: f32 = 600.0;
 
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct AppConfig {
     pub projects: Vec<SavedProject>,
     pub last_selected_repo: Option<PathBuf>,
+    #[serde(default)]
+    pub left_sidebar_width: Option<f32>,
+    #[serde(default)]
+    pub right_sidebar_width: Option<f32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -170,5 +176,14 @@ pub struct AppState {
     pub viewing_diff: Option<DiffData>,
     pub left_sidebar_collapsed: bool,
     pub right_sidebar_collapsed: bool,
+    pub left_sidebar_width: f32,
+    pub right_sidebar_width: f32,
     pub collapsed_projects: HashSet<PathBuf>,
+    pub resizing_sidebar: Option<ResizingSidebar>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ResizingSidebar {
+    Left,
+    Right,
 }

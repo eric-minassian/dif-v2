@@ -1,4 +1,4 @@
-use gpui::{ClipboardItem, Context, Window};
+use gpui::{ClipboardItem, Context, ExternalPaths, Window};
 
 use super::{ByteSelection, Copy, SelectAll, TerminalView};
 
@@ -18,6 +18,30 @@ impl TerminalView {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+
+        if self.session.bracketed_paste_enabled() {
+            self.send_input_parts(&[b"\x1b[200~", text.as_bytes(), b"\x1b[201~"], cx);
+        } else {
+            self.send_input_parts(&[text.as_bytes()], cx);
+        }
+    }
+
+    pub(crate) fn on_file_drop(
+        &mut self,
+        paths: &ExternalPaths,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let text = paths
+            .paths()
+            .iter()
+            .map(|p| shell_quote(&p.to_string_lossy()))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if text.is_empty() {
+            return;
+        }
 
         if self.session.bracketed_paste_enabled() {
             self.send_input_parts(&[b"\x1b[200~", text.as_bytes(), b"\x1b[201~"], cx);
@@ -59,4 +83,14 @@ impl TerminalView {
         self.on_copy(&Copy, window, cx);
         cx.notify();
     }
+}
+
+pub(crate) fn shell_quote(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    if s.bytes().all(|b| matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b'/' | b':' | b'@')) {
+        return s.to_string();
+    }
+    format!("'{}'", s.replace('\'', "'\\''"))
 }

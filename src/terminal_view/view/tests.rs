@@ -1,5 +1,6 @@
 use ghostty_vt::Rgb;
 
+use super::clipboard::shell_quote;
 use super::drawing::cursor_color_for_background;
 use super::helpers::window_position_to_local;
 use super::url::{url_at_byte_index, url_at_column_in_line};
@@ -55,4 +56,35 @@ fn cursor_color_contrasts_with_background() {
     });
     assert!(cursor.l > 0.8);
     assert!((cursor.a - 0.72).abs() < f32::EPSILON);
+}
+
+#[test]
+fn shell_quote_returns_empty_quoted_for_empty_string() {
+    assert_eq!(shell_quote(""), "''");
+}
+
+#[test]
+fn shell_quote_leaves_simple_paths_unquoted() {
+    assert_eq!(shell_quote("/usr/bin/ls"), "/usr/bin/ls");
+    assert_eq!(shell_quote("file.txt"), "file.txt");
+    assert_eq!(shell_quote("a-b_c.d"), "a-b_c.d");
+    assert_eq!(shell_quote("/tmp/image@2x.png"), "/tmp/image@2x.png");
+}
+
+#[test]
+fn shell_quote_quotes_paths_with_spaces() {
+    assert_eq!(shell_quote("/path/to/my file.png"), "'/path/to/my file.png'");
+}
+
+#[test]
+fn shell_quote_escapes_single_quotes() {
+    assert_eq!(shell_quote("it's"), "'it'\\''s'");
+}
+
+#[test]
+fn shell_quote_quotes_special_characters() {
+    assert_eq!(shell_quote("a b"), "'a b'");
+    assert_eq!(shell_quote("a(b)"), "'a(b)'");
+    assert_eq!(shell_quote("a$b"), "'a$b'");
+    assert_eq!(shell_quote("a&b"), "'a&b'");
 }

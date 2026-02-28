@@ -182,6 +182,7 @@ impl Render for TerminalView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Right, cx.listener(Self::on_mouse_up))
+            .on_drop(cx.listener(Self::on_file_drop))
             .bg(hsla_from_rgb(self.session.default_background()))
             .text_color(hsla_from_rgb(self.session.default_foreground()))
             .font(self.font.clone())

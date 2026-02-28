@@ -334,19 +334,19 @@ fn responds_to_osc_11_query_terminated_by_bel() {
 #[test]
 fn sgr_mouse_encoding_helpers_match_expected_format() {
     assert_eq!(
-        super::view::sgr_mouse_button_value(0, false, false, false, false),
+        super::view::helpers::sgr_mouse_button_value(0, false, false, false, false),
         0
     );
     assert_eq!(
-        super::view::sgr_mouse_button_value(2, true, false, true, true),
+        super::view::helpers::sgr_mouse_button_value(2, true, false, true, true),
         2 + 32 + 8 + 16
     );
     assert_eq!(
-        super::view::sgr_mouse_sequence(0, 1, 1, true),
+        super::view::helpers::sgr_mouse_sequence(0, 1, 1, true),
         "\u{1b}[<0;1;1M"
     );
     assert_eq!(
-        super::view::sgr_mouse_sequence(0, 1, 1, false),
+        super::view::helpers::sgr_mouse_sequence(0, 1, 1, false),
         "\u{1b}[<0;1;1m"
     );
 }
@@ -354,34 +354,34 @@ fn sgr_mouse_encoding_helpers_match_expected_format() {
 #[test]
 fn ctrl_c_encodes_to_etx_even_without_key_char() {
     let ctrl_c = Keystroke::parse("ctrl-c").unwrap();
-    assert_eq!(super::view::ctrl_byte_for_keystroke(&ctrl_c), Some(0x03));
+    assert_eq!(super::view::helpers::ctrl_byte_for_keystroke(&ctrl_c), Some(0x03));
 }
 
 #[test]
 fn does_not_skip_enter_key_when_ime_in_progress() {
     let enter = Keystroke::parse("enter").unwrap();
     assert!(enter.is_ime_in_progress());
-    assert!(!super::view::should_skip_key_down_for_ime(true, &enter));
+    assert!(!super::view::helpers::should_skip_key_down_for_ime(true, &enter));
 
     let letter = Keystroke::parse("a").unwrap();
     assert!(letter.is_ime_in_progress());
-    assert!(super::view::should_skip_key_down_for_ime(true, &letter));
+    assert!(super::view::helpers::should_skip_key_down_for_ime(true, &letter));
 
     let committed = Keystroke::parse("a->a").unwrap();
     assert!(!committed.is_ime_in_progress());
-    assert!(!super::view::should_skip_key_down_for_ime(true, &committed));
+    assert!(!super::view::helpers::should_skip_key_down_for_ime(true, &committed));
 }
 
 #[test]
 fn byte_index_for_column_in_line_handles_wide_characters() {
-    assert_eq!(super::view::byte_index_for_column_in_line("Ｗa", 1), 0);
-    assert_eq!(super::view::byte_index_for_column_in_line("Ｗa", 2), 0);
+    assert_eq!(super::view::helpers::byte_index_for_column_in_line("Ｗa", 1), 0);
+    assert_eq!(super::view::helpers::byte_index_for_column_in_line("Ｗa", 2), 0);
     assert_eq!(
-        super::view::byte_index_for_column_in_line("Ｗa", 3),
+        super::view::helpers::byte_index_for_column_in_line("Ｗa", 3),
         "Ｗ".len()
     );
     assert_eq!(
-        super::view::byte_index_for_column_in_line("Ｗa", 4),
+        super::view::helpers::byte_index_for_column_in_line("Ｗa", 4),
         "Ｗ".len() + 1
     );
 }
@@ -390,9 +390,9 @@ fn byte_index_for_column_in_line_handles_wide_characters() {
 fn maps_common_box_drawing_glyphs() {
     for ch in ['─', '│', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼'] {
         assert!(
-            super::view::box_drawing_mask(ch).is_some(),
+            super::view::drawing::box_drawing_mask(ch).is_some(),
             "expected mask for {ch}"
         );
     }
-    assert!(super::view::box_drawing_mask('X').is_none());
+    assert!(super::view::drawing::box_drawing_mask('X').is_none());
 }

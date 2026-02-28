@@ -3,7 +3,7 @@ use crate::terminal_view::view::{Copy, Paste, SelectAll};
 use crate::text_input;
 
 use crate::storage;
-use crate::ui::{
+use crate::workspace::{
     CloseDiffView, NewSideTab, RefreshGitStatus, SelectSideTab1, SelectSideTab2, SelectSideTab3,
     SelectSideTab4, SelectSideTab5, SelectSideTab6, SelectSideTab7, SelectSideTab8, SelectSideTab9,
     ToggleLeftSidebar, ToggleRightSidebar, WorkspaceView,

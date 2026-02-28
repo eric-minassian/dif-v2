@@ -9,6 +9,44 @@ use crate::state::{ActionPhase, ProjectRuntime};
 use super::helpers::apply_git_snapshot;
 use super::WorkspaceView;
 
+/// Checks whether a commit message follows the Conventional Commits spec.
+/// Expects: `type[(scope)][!]: description`
+fn is_conventional_commit(message: &str) -> bool {
+    let first_line = message.lines().next().unwrap_or("").trim();
+    if first_line.is_empty() {
+        return false;
+    }
+
+    // Split on first ':'
+    let Some(colon_pos) = first_line.find(':') else {
+        return false;
+    };
+
+    let prefix = &first_line[..colon_pos];
+    let description = first_line[colon_pos + 1..].trim();
+
+    // Description after colon must be non-empty
+    if description.is_empty() {
+        return false;
+    }
+
+    // Strip optional '!' before colon (breaking change marker)
+    let prefix = prefix.strip_suffix('!').unwrap_or(prefix);
+
+    // Strip optional scope in parens
+    let type_part = if let Some(paren_start) = prefix.find('(') {
+        if !prefix.ends_with(')') {
+            return false;
+        }
+        &prefix[..paren_start]
+    } else {
+        prefix
+    };
+
+    // Type must be non-empty, lowercase alphanumeric
+    !type_part.is_empty() && type_part.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+}
+
 impl WorkspaceView {
     pub(crate) fn on_refresh_git_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(repo) = self.state.selected_repo.clone() {
@@ -107,6 +145,21 @@ impl WorkspaceView {
         if runtime.commit_message.trim().is_empty() {
             return;
         }
+
+        // Validate conventional commit format if enforced
+        if let Some(project) = self.state.config.projects.iter().find(|p| p.repo_root == repo) {
+            if project.settings.enforce_conventional_commits
+                && !is_conventional_commit(&runtime.commit_message)
+            {
+                runtime.action_phase = ActionPhase::Error(
+                    "Commit message must follow Conventional Commits: type[(scope)]: description"
+                        .into(),
+                );
+                cx.notify();
+                return;
+            }
+        }
+
         let message = runtime.commit_message.clone();
         runtime.action_phase = ActionPhase::Working("Committing...".into());
         cx.notify();
@@ -454,5 +507,37 @@ impl WorkspaceView {
                 }
             })
             .detach();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_conventional_commit;
+
+    #[test]
+    fn valid_conventional_commits() {
+        assert!(is_conventional_commit("feat: add login"));
+        assert!(is_conventional_commit("fix: resolve crash"));
+        assert!(is_conventional_commit("feat(auth): add oauth"));
+        assert!(is_conventional_commit("fix(ui): button alignment"));
+        assert!(is_conventional_commit("chore: bump deps"));
+        assert!(is_conventional_commit("docs: update readme"));
+        assert!(is_conventional_commit("feat!: breaking change"));
+        assert!(is_conventional_commit("feat(api)!: remove endpoint"));
+        assert!(is_conventional_commit("ci: update workflow"));
+        assert!(is_conventional_commit("refactor: simplify logic"));
+        assert!(is_conventional_commit("feat: add thing\n\nbody text here"));
+    }
+
+    #[test]
+    fn invalid_conventional_commits() {
+        assert!(!is_conventional_commit(""));
+        assert!(!is_conventional_commit("just a message"));
+        assert!(!is_conventional_commit("Fix the bug"));
+        assert!(!is_conventional_commit("feat:"));
+        assert!(!is_conventional_commit("feat: "));
+        assert!(!is_conventional_commit("FEAT: uppercase type"));
+        assert!(!is_conventional_commit("feat(: bad scope"));
+        assert!(!is_conventional_commit(": no type"));
     }
 }

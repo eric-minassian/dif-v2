@@ -18,6 +18,8 @@ struct RawSavedSession {
 struct RawProjectSettings {
     #[serde(default)]
     workspace_init_commands: Option<Vec<String>>,
+    #[serde(default)]
+    enforce_conventional_commits: Option<bool>,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -99,6 +101,7 @@ pub fn load_config() -> Result<AppConfig> {
                 .settings
                 .map(|raw| ProjectSettings {
                     workspace_init_commands: raw.workspace_init_commands.unwrap_or_default(),
+                    enforce_conventional_commits: raw.enforce_conventional_commits.unwrap_or(false),
                 })
                 .unwrap_or_default();
 
@@ -159,6 +162,7 @@ mod tests {
                         worktree_path: Some(PathBuf::from("/tmp/worktree-1")),
                     }],
                     last_selected_session: Some("1".into()),
+                    ..Default::default()
                 },
                 RawSavedProject {
                     repo_root: None,
@@ -166,6 +170,7 @@ mod tests {
                     last_known_valid: Some(false),
                     sessions: vec![],
                     last_selected_session: None,
+                    ..Default::default()
                 },
             ],
             last_selected_repo: Some(PathBuf::from("/tmp/one")),
@@ -237,6 +242,7 @@ mod tests {
                 last_known_valid: Some(true),
                 sessions: vec![],
                 last_selected_session: None,
+                ..Default::default()
             }],
             last_selected_repo: None,
             ..Default::default()

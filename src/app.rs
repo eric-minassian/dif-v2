@@ -1,4 +1,5 @@
 use gpui::{App, AppContext, Application, KeyBinding, TitlebarOptions, WindowOptions, point, px};
+use crate::terminal_view::view::{Copy, Paste, SelectAll};
 
 use crate::storage;
 use crate::ui::{
@@ -24,6 +25,9 @@ pub fn run() {
             KeyBinding::new("cmd-7", SelectSideTab7, None),
             KeyBinding::new("cmd-8", SelectSideTab8, None),
             KeyBinding::new("cmd-9", SelectSideTab9, None),
+            KeyBinding::new("cmd-a", SelectAll, None),
+            KeyBinding::new("cmd-c", Copy, None),
+            KeyBinding::new("cmd-v", Paste, None),
         ]);
 
         let config = storage::load_config().unwrap_or_default();

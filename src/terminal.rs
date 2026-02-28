@@ -1,10 +1,14 @@
+use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context as AnyhowContext, Result};
-use gpui::{AppContext, Context, Entity, Window, px};
-use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
+use gpui::{AppContext, Context, Entity, Window};
+use crate::terminal_view::view::{TerminalInput, TerminalView};
+use crate::terminal_view::{TerminalConfig, TerminalSession};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 pub fn spawn_terminal<T: 'static>(
@@ -17,32 +21,25 @@ pub fn spawn_terminal<T: 'static>(
 }
 
 fn spawn_terminal_inner<T: 'static>(
-    _window: &mut Window,
+    window: &mut Window,
     cx: &mut Context<T>,
     working_directory: &Path,
     command: &str,
     args: &[&str],
 ) -> Result<Entity<TerminalView>> {
-    let config = TerminalConfig {
-        cols: 80,
-        rows: 24,
-        font_family: "Menlo".into(),
-        font_size: px(13.0),
-        line_height_multiplier: 1.0,
-        scrollback: 10_000,
-        padding: gpui::Edges::all(px(6.0)),
-        colors: ColorPalette::default(),
-    };
+    let config = TerminalConfig::default();
 
     let pty_system = native_pty_system();
     let pty_pair = pty_system
         .openpty(PtySize {
-            rows: config.rows.try_into().unwrap_or(u16::MAX),
-            cols: config.cols.try_into().unwrap_or(u16::MAX),
+            rows: config.rows,
+            cols: config.cols,
             pixel_width: 0,
             pixel_height: 0,
         })
         .context("failed to create pty")?;
+
+    let master: Arc<dyn portable_pty::MasterPty + Send> = Arc::from(pty_pair.master);
 
     let mut cmd = CommandBuilder::new(command);
     for arg in args {
@@ -52,6 +49,7 @@ fn spawn_terminal_inner<T: 'static>(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "dif");
+
     let mut child = pty_pair
         .slave
         .spawn_command(cmd)
@@ -61,27 +59,83 @@ fn spawn_terminal_inner<T: 'static>(
         let _ = child.wait();
     });
 
-    let master = pty_pair.master;
-    let pty_reader = master
+    let mut pty_reader = master
         .try_clone_reader()
         .context("failed to clone pty reader")?;
-    let pty_writer = master.take_writer().context("failed to take pty writer")?;
-    let resize_master = Arc::new(Mutex::new(master));
+    let mut pty_writer = master.take_writer().context("failed to take pty writer")?;
 
-    Ok(cx.new(|cx| {
-        TerminalView::new(pty_writer, pty_reader, config, cx).with_resize_callback(
-            move |cols, rows| {
-                let Ok(master) = resize_master.lock() else {
-                    return;
-                };
+    let (stdin_tx, stdin_rx) = mpsc::channel::<Vec<u8>>();
+    let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>();
 
-                let _ = master.resize(PtySize {
-                    rows: rows.try_into().unwrap_or(u16::MAX),
-                    cols: cols.try_into().unwrap_or(u16::MAX),
+    // Stdin writer thread: reads from channel, writes to PTY
+    thread::spawn(move || {
+        while let Ok(bytes) = stdin_rx.recv() {
+            if pty_writer.write_all(&bytes).is_err() {
+                break;
+            }
+            let _ = pty_writer.flush();
+        }
+    });
+
+    // Stdout reader thread: reads from PTY, sends to channel
+    thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = match pty_reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(_) => break,
+            };
+            let _ = stdout_tx.send(buf[..n].to_vec());
+        }
+    });
+
+    let master_for_resize = master.clone();
+    let view = cx.new(|cx: &mut Context<TerminalView>| {
+        let focus_handle = cx.focus_handle();
+
+        let session = TerminalSession::new(config).expect("ghostty vt init");
+        let stdin_tx_for_input = stdin_tx.clone();
+        let input = TerminalInput::new(move |bytes| {
+            let _ = stdin_tx_for_input.send(bytes.to_vec());
+        });
+
+        TerminalView::new_with_input(session, focus_handle, input)
+            .with_resize_callback(move |cols, rows| {
+                let _ = master_for_resize.resize(PtySize {
+                    rows,
+                    cols,
                     pixel_width: 0,
                     pixel_height: 0,
                 });
-            },
-        )
-    }))
+            })
+    });
+
+    // 16ms polling task: drain stdout channel → queue_output_bytes
+    let view_for_task = view.clone();
+    window
+        .spawn(cx, async move |cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
+                let mut batch = Vec::new();
+                while let Ok(chunk) = stdout_rx.try_recv() {
+                    batch.extend_from_slice(&chunk);
+                }
+                if batch.is_empty() {
+                    continue;
+                }
+
+                cx.update(|_, cx| {
+                    view_for_task.update(cx, |this: &mut TerminalView, cx| {
+                        this.queue_output_bytes(&batch, cx);
+                    });
+                })
+                .ok();
+            }
+        })
+        .detach();
+
+    Ok(view)
 }

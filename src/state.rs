@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use gpui::Entity;
-use gpui_terminal::TerminalView;
+use crate::terminal_view::view::TerminalView;
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SavedSession {

@@ -1,6 +1,6 @@
 use std::process::Command;
 
-const GITHUB_REPO: &str = "ericminas/dif";
+const GITHUB_REPO: &str = "eric-minassian/dif-v2";
 
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")

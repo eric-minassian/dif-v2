@@ -1,6 +1,8 @@
 mod app;
+mod assets;
 mod components;
 mod git;
+mod icons;
 mod picker;
 mod state;
 mod storage;

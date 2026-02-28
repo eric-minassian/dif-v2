@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+rust-embed = "8"
 base64 = "0.22"
 directories = "6.0"
 ghostty_vt = { git = "https://github.com/Xuanwo/gpui-ghostty", package = "ghostty_vt" }

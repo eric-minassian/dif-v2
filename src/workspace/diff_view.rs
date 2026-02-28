@@ -3,6 +3,7 @@ use std::rc::Rc;
 use gpui::{AnyElement, Context, MouseButton, MouseUpEvent, Window, div, prelude::*, px, uniform_list};
 
 use crate::git;
+use crate::icons::icon_x;
 use crate::state::{DiffData, SplitLine, SplitLineKind};
 use crate::theme::theme;
 
@@ -120,7 +121,11 @@ impl WorkspaceView {
                             this.on_close_diff(cx);
                         }),
                     )
-                    .child("✕ Esc"),
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(icon_x().size_3().text_color(t.text_dim))
+                    .child("Esc"),
             );
 
         let lines = Rc::new(diff_data.lines.clone());

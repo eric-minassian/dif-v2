@@ -1,4 +1,5 @@
 use gpui::{App, AppContext, Application, KeyBinding, TitlebarOptions, WindowOptions, point, px};
+use crate::assets::Assets;
 use crate::terminal_view::view::{Copy, Paste, SelectAll};
 use crate::text_input;
 
@@ -10,7 +11,7 @@ use crate::workspace::{
 };
 
 pub fn run() {
-    Application::new().run(|cx: &mut App| {
+    Application::new().with_assets(Assets).run(|cx: &mut App| {
         cx.bind_keys(text_input::key_bindings());
         cx.bind_keys([
             KeyBinding::new("escape", CloseDiffView, None),

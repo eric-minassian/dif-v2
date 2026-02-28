@@ -1,5 +1,6 @@
 use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
 
+use crate::icons::{icon_panel_left, icon_panel_right};
 use crate::state::UpdateStatus;
 use crate::theme::theme;
 
@@ -96,22 +97,23 @@ impl WorkspaceView {
                             .px_2()
                             .py_1()
                             .rounded_sm()
-                            .text_xs()
-                            .text_color(if left_collapsed {
-                                t.text_dim
-                            } else {
-                                t.text_muted
-                            })
-                            .hover(|style| {
-                                style.text_color(t.text_primary).cursor_pointer()
-                            })
+                            .cursor_pointer()
+                            .hover(|style| style.bg(t.hover_overlay))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _window, cx| {
                                     this.on_toggle_left_sidebar(cx);
                                 }),
                             )
-                            .child("⊞"),
+                            .child(
+                                icon_panel_left()
+                                    .size_3p5()
+                                    .text_color(if left_collapsed {
+                                        t.text_dim
+                                    } else {
+                                        t.text_muted
+                                    })
+                            ),
                     ),
             )
             // Right side: update indicator + sidebar toggle
@@ -128,22 +130,23 @@ impl WorkspaceView {
                             .px_2()
                             .py_1()
                             .rounded_sm()
-                            .text_xs()
-                            .text_color(if right_collapsed {
-                                t.text_dim
-                            } else {
-                                t.text_muted
-                            })
-                            .hover(|style| {
-                                style.text_color(t.text_primary).cursor_pointer()
-                            })
+                            .cursor_pointer()
+                            .hover(|style| style.bg(t.hover_overlay))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _window, cx| {
                                     this.on_toggle_right_sidebar(cx);
                                 }),
                             )
-                            .child("⊟"),
+                            .child(
+                                icon_panel_right()
+                                    .size_3p5()
+                                    .text_color(if right_collapsed {
+                                        t.text_dim
+                                    } else {
+                                        t.text_muted
+                                    })
+                            ),
                     ),
             )
             .into_any_element()

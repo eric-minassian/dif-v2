@@ -1314,6 +1314,7 @@ dependencies = [
  "ghostty_vt",
  "gpui",
  "portable-pty",
+ "rust-embed",
  "serde",
  "serde_json",
  "similar",

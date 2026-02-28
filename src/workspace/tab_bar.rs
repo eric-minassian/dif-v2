@@ -1,6 +1,7 @@
 use gpui::{AnyElement, Context, MouseButton, Window, div, prelude::*};
 
 use crate::components::empty_state;
+use crate::icons::{icon_plus, icon_x};
 use crate::state::{SessionRuntime, TerminalTab};
 use crate::terminal;
 use crate::theme::theme;
@@ -201,7 +202,6 @@ impl WorkspaceView {
                     .child(
                         div()
                             .cursor_pointer()
-                            .text_xs()
                             .text_color(t.text_line_number)
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -209,7 +209,7 @@ impl WorkspaceView {
                                     this.on_delete_side_tab(delete_tab_id.clone(), cx);
                                 }),
                             )
-                            .child("x"),
+                            .child(icon_x().size_3().text_color(t.text_line_number)),
                     )
             }))
             .child(
@@ -217,7 +217,6 @@ impl WorkspaceView {
                     .cursor_pointer()
                     .px_2()
                     .py_1()
-                    .text_xs()
                     .text_color(t.text_dim)
                     .on_mouse_up(
                         MouseButton::Left,
@@ -225,7 +224,7 @@ impl WorkspaceView {
                             this.on_add_side_tab(window, cx);
                         }),
                     )
-                    .child("+"),
+                    .child(icon_plus().size_3p5().text_color(t.text_dim)),
             )
             .into_any_element()
     }

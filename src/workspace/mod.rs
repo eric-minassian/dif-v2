@@ -150,7 +150,6 @@ impl WorkspaceView {
             Ok(view) => {
                 let tab = TerminalTab {
                     id: "1".to_string(),
-                    name: "Terminal 1".to_string(),
                     view,
                 };
                 (vec![tab], Some("1".to_string()), 2)

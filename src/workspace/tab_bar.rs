@@ -48,10 +48,8 @@ impl WorkspaceView {
             Ok(view) => {
                 let id = session_runtime.next_tab_id.to_string();
                 session_runtime.next_tab_id += 1;
-                let name = format!("Terminal {id}");
                 session_runtime.side_tabs.push(TerminalTab {
                     id: id.clone(),
-                    name,
                     view,
                 });
                 session_runtime.selected_side_tab = Some(id);
@@ -216,7 +214,7 @@ impl WorkspaceView {
                                     this.on_select_side_tab(select_tab_id.clone(), cx);
                                 }),
                             )
-                            .child(tab.name.clone()),
+                            .child(tab.id.clone()),
                     )
                     .child(
                         div()

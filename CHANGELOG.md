@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/eric-minassian/dif-v2/compare/v0.3.1...v0.4.0) (2026-02-28)
+
+
+### Features
+
+* auto merge ([d256d8e](https://github.com/eric-minassian/dif-v2/commit/d256d8e7ab48b1b2f597ef659eacc0e18fba40f7))
+* release-please PAT ([07bc44f](https://github.com/eric-minassian/dif-v2/commit/07bc44f2052ff392c0ac8adde02a09101f026845))
+
+
+### Bug Fixes
+
+* add missing commit_message field in SessionRuntime initializer ([57786ea](https://github.com/eric-minassian/dif-v2/commit/57786ea52370105ac2d2ef7215541873486667da))
+* **ci:** install zig for ghostty_vt_sys build script ([7840fb8](https://github.com/eric-minassian/dif-v2/commit/7840fb81d0fb663851cc5eb00ef903fbfb2ed71c))
+* **ci:** override cargo target dir in check workflow ([d7bf66b](https://github.com/eric-minassian/dif-v2/commit/d7bf66b0128a710c0b91484ab294b707894bb8c6))
+
 ## [0.3.1](https://github.com/eric-minassian/dif-v2/compare/v0.3.0...v0.3.1) (2026-02-28)
 
 

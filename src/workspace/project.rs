@@ -85,6 +85,13 @@ impl WorkspaceView {
         let session_id = pick_initial_session(&self.state.config, &repo_root);
         if let Some(session_id) = session_id {
             self.activate_session(repo_root, session_id, window, cx);
+        } else {
+            self.state.git_poll_generation = self.state.git_poll_generation.wrapping_add(1);
+            self.state.selected_repo = Some(repo_root.clone());
+            self.state.selected_session = None;
+            self.state.config.last_selected_repo = Some(repo_root);
+            self.persist_config();
+            cx.notify();
         }
     }
 
@@ -110,22 +117,13 @@ impl WorkspaceView {
                     return;
                 }
 
-                let mut project = SavedProject::from_repo_root(repo_root.clone());
-                let session_id = project.sessions[0].id.clone();
-
-                match git::create_worktree(&repo_root, &project.display_name, &session_id) {
-                    Ok(wt_path) => {
-                        self.run_init_commands(&repo_root, &wt_path);
-                        project.sessions[0].worktree_path = Some(wt_path);
-                    }
-                    Err(error) => {
-                        self.state.flash_error =
-                            Some(format!("Failed to create worktree: {error}"));
-                    }
-                }
-
+                let project = SavedProject::from_repo_root(repo_root.clone());
                 self.state.config.projects.push(project);
-                self.activate_session(repo_root, session_id, window, cx);
+                self.state.selected_repo = Some(repo_root.clone());
+                self.state.selected_session = None;
+                self.state.config.last_selected_repo = Some(repo_root);
+                self.persist_config();
+                cx.notify();
             }
             Err(error) => {
                 self.state.flash_error = Some(error);

@@ -114,6 +114,12 @@ impl WorkspaceView {
                 return;
             } else {
                 self.state.selected_session = None;
+                // Stop the git poll so it doesn't run against the removed worktree
+                self.state.git_poll_generation = self.state.git_poll_generation.wrapping_add(1);
+                // Clear stale git data
+                if let Some(runtime) = self.state.runtimes.get_mut(&repo_root) {
+                    runtime.git_snapshot = Default::default();
+                }
             }
         }
 

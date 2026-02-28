@@ -45,12 +45,8 @@ impl SavedProject {
             repo_root,
             display_name,
             last_known_valid: true,
-            sessions: vec![SavedSession {
-                id: "1".to_string(),
-                name: "Session 1".to_string(),
-                worktree_path: None,
-            }],
-            last_selected_session: Some("1".to_string()),
+            sessions: vec![],
+            last_selected_session: None,
             settings: ProjectSettings::default(),
         }
     }

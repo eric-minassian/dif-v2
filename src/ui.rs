@@ -1475,7 +1475,11 @@ impl Render for WorkspaceView {
                 this.on_add_side_tab(window, cx);
             }))
             .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
-                this.on_close_diff(cx);
+                if this.state.viewing_diff.is_some() {
+                    this.on_close_diff(cx);
+                } else {
+                    cx.propagate();
+                }
             }))
             .on_action(cx.listener(|this, _: &ToggleLeftSidebar, _window, cx| {
                 this.on_toggle_left_sidebar(cx);

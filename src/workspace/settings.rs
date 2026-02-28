@@ -2,8 +2,10 @@ use std::path::PathBuf;
 
 use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
 
+use crate::state::UpdateStatus;
 use crate::text_input::{TextInput, TextInputEvent};
 use crate::theme::theme;
+use crate::updater;
 
 use super::WorkspaceView;
 
@@ -130,26 +132,129 @@ impl WorkspaceView {
             .flex_col()
             .gap_4();
 
-        // Global settings section
-        content = content.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
+        // About / Version section
+        let mut about_section = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_sm()
+                    .text_color(t.text_secondary)
+                    .child("About"),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(t.text_primary)
+                    .child(format!("Dif v{}", updater::current_version())),
+            );
+
+        match &self.state.update_status {
+            UpdateStatus::Available { version, download_url } => {
+                let url = download_url.clone();
+                let ver = version.clone();
+                about_section = about_section.child(
                     div()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_sm()
-                        .text_color(t.text_secondary)
-                        .child("Global Settings"),
-                )
-                .child(
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(t.accent_green)
+                                .child(format!("{ver} available")),
+                        )
+                        .child(
+                            div()
+                                .id("settings-update-btn")
+                                .cursor_pointer()
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .text_xs()
+                                .bg(t.bg_elevated)
+                                .text_color(t.accent_green)
+                                .hover(|style| style.bg(t.bg_elevated_hover))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, window, cx| {
+                                        this.on_start_update(url.clone(), window, cx);
+                                    }),
+                                )
+                                .child("Install update"),
+                        ),
+                );
+            }
+            UpdateStatus::Updating => {
+                about_section = about_section.child(
                     div()
-                        .text_sm()
+                        .text_xs()
                         .text_color(t.text_muted)
-                        .child("No global settings yet."),
-                ),
-        );
+                        .child("Updating..."),
+                );
+            }
+            UpdateStatus::Error(msg) => {
+                about_section = about_section
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.accent_red)
+                            .child(format!("Update failed: {msg}")),
+                    )
+                    .child(
+                        div()
+                            .id("settings-retry-btn")
+                            .cursor_pointer()
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_xs()
+                            .bg(t.bg_elevated)
+                            .text_color(t.text_secondary)
+                            .hover(|style| style.bg(t.bg_elevated_hover))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    this.spawn_update_check(window, cx);
+                                }),
+                            )
+                            .child("Retry"),
+                    );
+            }
+            UpdateStatus::Checking => {
+                about_section = about_section.child(
+                    div()
+                        .text_xs()
+                        .text_color(t.text_muted)
+                        .child("Checking for updates..."),
+                );
+            }
+            UpdateStatus::Idle => {
+                about_section = about_section.child(
+                    div()
+                        .id("settings-check-btn")
+                        .cursor_pointer()
+                        .px_2()
+                        .py_1()
+                        .rounded_sm()
+                        .text_xs()
+                        .bg(t.bg_elevated)
+                        .text_color(t.text_secondary)
+                        .hover(|style| style.bg(t.bg_elevated_hover))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _, window, cx| {
+                                this.spawn_update_check(window, cx);
+                            }),
+                        )
+                        .child("Check for updates"),
+                );
+            }
+        }
+
+        content = content.child(about_section);
 
         // Per-project settings
         for project in &self.state.config.projects {

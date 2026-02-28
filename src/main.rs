@@ -8,6 +8,7 @@ mod terminal;
 mod terminal_view;
 mod text_input;
 mod theme;
+mod updater;
 mod workspace;
 
 fn main() {

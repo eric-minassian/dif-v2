@@ -213,10 +213,24 @@ pub struct AppState {
     pub right_sidebar_width: f32,
     pub collapsed_projects: HashSet<PathBuf>,
     pub resizing_sidebar: Option<ResizingSidebar>,
+    pub update_status: UpdateStatus,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum ResizingSidebar {
     Left,
     Right,
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum UpdateStatus {
+    #[default]
+    Idle,
+    Checking,
+    Available {
+        version: String,
+        download_url: String,
+    },
+    Updating,
+    Error(String),
 }

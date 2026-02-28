@@ -4,29 +4,43 @@ use std::process::Command;
 use super::git;
 use super::repo::home_dir;
 
+fn generate_short_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    // Mix bits for better distribution
+    let mixed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let chars: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    (0..5)
+        .map(|i| {
+            let idx = ((mixed >> (i * 6)) & 0x1F) as usize % chars.len();
+            chars[idx] as char
+        })
+        .collect()
+}
+
 pub fn create_worktree(
     repo_root: &Path,
     project_name: &str,
-    session_id: &str,
+    _session_id: &str,
 ) -> Result<PathBuf, String> {
     let home = home_dir().ok_or("could not determine home directory")?;
     let dif_dir = home.join(".dif");
-
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
 
     let sanitized_name = project_name
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
         .collect::<String>();
-    let worktree_name = format!("{sanitized_name}-session-{session_id}-{timestamp}");
-    let worktree_path = dif_dir.join(&worktree_name);
-    let branch_name = format!("dif/{worktree_name}");
 
-    std::fs::create_dir_all(&dif_dir)
-        .map_err(|e| format!("failed to create ~/.dif: {e}"))?;
+    let project_dir = dif_dir.join(&sanitized_name);
+    std::fs::create_dir_all(&project_dir)
+        .map_err(|e| format!("failed to create ~/.dif/{sanitized_name}: {e}"))?;
+
+    let short_id = generate_short_id();
+    let worktree_path = project_dir.join(&short_id);
+    let branch_name = format!("dif/{sanitized_name}-{short_id}");
 
     // Detect the default branch from origin (main, master, etc.)
     let default_branch = Command::new(git())

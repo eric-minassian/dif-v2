@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::state::{DiffData, DiffLine, DiffLineKind, GitChange};
+use similar::TextDiff;
+
+use crate::state::{DiffData, GitChange, SplitLine, SplitLineKind};
 
 pub fn normalize_repo_path(path: &Path) -> Result<PathBuf, String> {
     let expanded = expand_tilde(path);
@@ -174,165 +176,182 @@ fn count_file_lines(repo_root: &Path, relative_path: &str) -> Option<u32> {
     Some(content.lines().count() as u32)
 }
 
-pub fn get_file_diff(repo_root: &Path, file_path: &str, status_code: &str) -> Result<String, String> {
-    let (_old_path, new_path) = if file_path.contains(" -> ") {
+/// Get the committed (HEAD) version of a file from git.
+fn get_base_content(repo_root: &Path, file_path: &str) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["show", &format!("HEAD:{file_path}")])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        None
+    }
+}
+
+/// Compute a split (side-by-side) diff between the committed and working-tree
+/// versions of a file. Uses the `similar` crate for correct diff computation.
+pub fn compute_file_diff(
+    repo_root: &Path,
+    file_path: &str,
+    status_code: &str,
+) -> Result<DiffData, String> {
+    let (old_path, new_path) = if file_path.contains(" -> ") {
         let parts: Vec<&str> = file_path.splitn(2, " -> ").collect();
         (parts[0], parts[1])
     } else {
         (file_path, file_path)
     };
 
-    if status_code.trim() == "??" {
-        let full_path = repo_root.join(new_path);
-        let content = std::fs::read_to_string(&full_path)
-            .map_err(|e| format!("failed to read {}: {e}", full_path.display()))?;
-        let line_count = content.lines().count();
-        let mut diff = format!(
-            "--- /dev/null\n+++ b/{new_path}\n@@ -0,0 +1,{line_count} @@\n"
-        );
-        for line in content.lines() {
-            diff.push('+');
-            diff.push_str(line);
-            diff.push('\n');
-        }
-        return Ok(diff);
-    }
-
-    // Try unstaged then staged
-    let unstaged = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .args(["diff", "--", new_path])
-        .output()
-        .map_err(|e| format!("failed to run git diff: {e}"))?;
-
-    let staged = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .args(["diff", "--cached", "--", new_path])
-        .output()
-        .map_err(|e| format!("failed to run git diff --cached: {e}"))?;
-
-    let mut combined = String::new();
-    if unstaged.status.success() {
-        combined.push_str(&String::from_utf8_lossy(&unstaged.stdout));
-    }
-    if staged.status.success() {
-        let staged_str = String::from_utf8_lossy(&staged.stdout);
-        if !staged_str.is_empty() {
-            if !combined.is_empty() {
-                combined.push('\n');
-            }
-            combined.push_str(&staged_str);
-        }
-    }
-
-    if combined.is_empty() {
-        Err(format!("no diff available for {new_path}"))
+    let old_content = if status_code.trim() == "??" {
+        String::new()
     } else {
-        Ok(combined)
-    }
+        get_base_content(repo_root, old_path).unwrap_or_default()
+    };
+
+    let new_content = if status_code.contains('D') {
+        String::new()
+    } else {
+        let full_path = repo_root.join(new_path);
+        std::fs::read_to_string(&full_path)
+            .map_err(|e| format!("failed to read {}: {e}", full_path.display()))?
+    };
+
+    Ok(build_split_diff(file_path, &old_content, &new_content))
 }
 
-pub fn parse_unified_diff(file_path: &str, raw_diff: &str) -> DiffData {
+/// Build split-view diff lines from old/new content using `similar`.
+fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffData {
+    let diff = TextDiff::from_lines(old, new);
     let mut lines = Vec::new();
-    let mut left_num: u32 = 0;
-    let mut right_num: u32 = 0;
-    let mut pending_deletions: Vec<String> = Vec::new();
+    let mut additions: u32 = 0;
+    let mut deletions: u32 = 0;
+    let mut old_lineno: u32 = 1;
+    let mut new_lineno: u32 = 1;
 
-    for raw_line in raw_diff.lines() {
-        if raw_line.starts_with("diff ")
-            || raw_line.starts_with("index ")
-            || raw_line.starts_with("--- ")
-            || raw_line.starts_with("+++ ")
-        {
-            continue;
-        }
-
-        if raw_line.starts_with("@@ ") {
-            flush_pending(&mut lines, &mut pending_deletions, &mut left_num);
-            if let Some((l, r)) = parse_hunk_header(raw_line) {
-                left_num = l;
-                right_num = r;
+    for op in diff.ops() {
+        match op {
+            similar::DiffOp::Equal {
+                old_index,
+                new_index,
+                len,
+            } => {
+                let old_lines = diff.old_slices()[*old_index..*old_index + *len].to_vec();
+                for text in old_lines {
+                    lines.push(SplitLine {
+                        old_lineno: Some(old_lineno),
+                        new_lineno: Some(new_lineno),
+                        old_text: strip_newline(text),
+                        new_text: strip_newline(text),
+                        kind: SplitLineKind::Equal,
+                    });
+                    old_lineno += 1;
+                    new_lineno += 1;
+                }
+                let _ = new_index; // used implicitly
             }
-            lines.push(DiffLine {
-                left_number: None,
-                left_text: raw_line.to_string(),
-                right_number: None,
-                right_text: String::new(),
-                kind: DiffLineKind::Context,
-            });
-            continue;
-        }
-
-        if let Some(text) = raw_line.strip_prefix('-') {
-            pending_deletions.push(text.to_string());
-        } else if let Some(text) = raw_line.strip_prefix('+') {
-            if let Some(del_text) = pending_deletions.pop() {
-                lines.push(DiffLine {
-                    left_number: Some(left_num),
-                    left_text: del_text,
-                    right_number: Some(right_num),
-                    right_text: text.to_string(),
-                    kind: DiffLineKind::Modified,
-                });
-                left_num += 1;
-                right_num += 1;
-            } else {
-                lines.push(DiffLine {
-                    left_number: None,
-                    left_text: String::new(),
-                    right_number: Some(right_num),
-                    right_text: text.to_string(),
-                    kind: DiffLineKind::Addition,
-                });
-                right_num += 1;
+            similar::DiffOp::Delete {
+                old_index,
+                old_len,
+                new_index: _,
+            } => {
+                for i in 0..*old_len {
+                    let text = diff.old_slices()[*old_index + i];
+                    lines.push(SplitLine {
+                        old_lineno: Some(old_lineno),
+                        new_lineno: None,
+                        old_text: strip_newline(text),
+                        new_text: String::new(),
+                        kind: SplitLineKind::Delete,
+                    });
+                    old_lineno += 1;
+                    deletions += 1;
+                }
             }
-        } else {
-            flush_pending(&mut lines, &mut pending_deletions, &mut left_num);
-            let text = raw_line.strip_prefix(' ').unwrap_or(raw_line);
-            lines.push(DiffLine {
-                left_number: Some(left_num),
-                left_text: text.to_string(),
-                right_number: Some(right_num),
-                right_text: text.to_string(),
-                kind: DiffLineKind::Context,
-            });
-            left_num += 1;
-            right_num += 1;
+            similar::DiffOp::Insert {
+                old_index: _,
+                new_index,
+                new_len,
+            } => {
+                for i in 0..*new_len {
+                    let text = diff.new_slices()[*new_index + i];
+                    lines.push(SplitLine {
+                        old_lineno: None,
+                        new_lineno: Some(new_lineno),
+                        old_text: String::new(),
+                        new_text: strip_newline(text),
+                        kind: SplitLineKind::Insert,
+                    });
+                    new_lineno += 1;
+                    additions += 1;
+                }
+            }
+            similar::DiffOp::Replace {
+                old_index,
+                old_len,
+                new_index,
+                new_len,
+            } => {
+                let max = (*old_len).max(*new_len);
+                for i in 0..max {
+                    let has_old = i < *old_len;
+                    let has_new = i < *new_len;
+                    let old_text = if has_old {
+                        strip_newline(diff.old_slices()[*old_index + i])
+                    } else {
+                        String::new()
+                    };
+                    let new_text = if has_new {
+                        strip_newline(diff.new_slices()[*new_index + i])
+                    } else {
+                        String::new()
+                    };
+                    lines.push(SplitLine {
+                        old_lineno: if has_old {
+                            let n = old_lineno;
+                            old_lineno += 1;
+                            Some(n)
+                        } else {
+                            None
+                        },
+                        new_lineno: if has_new {
+                            let n = new_lineno;
+                            new_lineno += 1;
+                            Some(n)
+                        } else {
+                            None
+                        },
+                        old_text,
+                        new_text,
+                        kind: SplitLineKind::Replace,
+                    });
+                    if has_old {
+                        deletions += 1;
+                    }
+                    if has_new {
+                        additions += 1;
+                    }
+                }
+            }
         }
     }
-
-    flush_pending(&mut lines, &mut pending_deletions, &mut left_num);
 
     DiffData {
         file_path: file_path.to_string(),
         lines,
+        additions,
+        deletions,
     }
 }
 
-fn flush_pending(lines: &mut Vec<DiffLine>, pending: &mut Vec<String>, left_num: &mut u32) {
-    for del_text in pending.drain(..) {
-        lines.push(DiffLine {
-            left_number: Some(*left_num),
-            left_text: del_text,
-            right_number: None,
-            right_text: String::new(),
-            kind: DiffLineKind::Deletion,
-        });
-        *left_num += 1;
-    }
-}
-
-fn parse_hunk_header(line: &str) -> Option<(u32, u32)> {
-    let after_at = line.strip_prefix("@@ ")?;
-    let parts: Vec<&str> = after_at.splitn(3, ' ').collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let left_start = parts[0].strip_prefix('-')?.split(',').next()?.parse::<u32>().ok()?;
-    let right_start = parts[1].strip_prefix('+')?.split(',').next()?.parse::<u32>().ok()?;
-    Some((left_start, right_start))
+fn strip_newline(s: &str) -> String {
+    s.strip_suffix('\n')
+        .or_else(|| s.strip_suffix("\r\n"))
+        .unwrap_or(s)
+        .to_string()
 }
 
 fn expand_tilde(path: &Path) -> PathBuf {
@@ -360,7 +379,7 @@ fn home_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::DiffLineKind;
+    use crate::state::SplitLineKind;
 
     #[test]
     fn parses_standard_status_rows() {
@@ -395,57 +414,57 @@ mod tests {
     }
 
     #[test]
-    fn parses_hunk_header() {
-        assert_eq!(parse_hunk_header("@@ -10,5 +20,8 @@ fn foo"), Some((10, 20)));
-        assert_eq!(parse_hunk_header("@@ -1 +1 @@"), Some((1, 1)));
-        assert_eq!(parse_hunk_header("not a header"), None);
-    }
+    fn split_diff_replace() {
+        let old = "line one\nold line\nline three\n";
+        let new = "line one\nnew line\nline three\n";
+        let data = build_split_diff("file.rs", old, new);
 
-    #[test]
-    fn parses_unified_diff_side_by_side() {
-        let diff = "\
---- a/file.rs
-+++ b/file.rs
-@@ -1,4 +1,4 @@
- line one
--old line
-+new line
- line three
-";
-        let data = parse_unified_diff("file.rs", diff);
         assert_eq!(data.file_path, "file.rs");
+        assert_eq!(data.lines.len(), 3);
 
-        // Hunk header + context + modified + context = 4 lines
-        assert_eq!(data.lines.len(), 4);
+        assert_eq!(data.lines[0].kind, SplitLineKind::Equal);
+        assert_eq!(data.lines[0].old_text, "line one");
+        assert_eq!(data.lines[0].new_text, "line one");
 
-        // Context line
-        assert_eq!(data.lines[1].kind, DiffLineKind::Context);
-        assert_eq!(data.lines[1].left_text, "line one");
-        assert_eq!(data.lines[1].right_text, "line one");
+        assert_eq!(data.lines[1].kind, SplitLineKind::Replace);
+        assert_eq!(data.lines[1].old_text, "old line");
+        assert_eq!(data.lines[1].new_text, "new line");
 
-        // Modified line (paired deletion + addition)
-        assert_eq!(data.lines[2].kind, DiffLineKind::Modified);
-        assert_eq!(data.lines[2].left_text, "old line");
-        assert_eq!(data.lines[2].right_text, "new line");
+        assert_eq!(data.lines[2].kind, SplitLineKind::Equal);
     }
 
     #[test]
-    fn parses_additions_and_deletions() {
-        let diff = "\
---- a/file.rs
-+++ b/file.rs
-@@ -1,3 +1,4 @@
- context
--removed
-+added one
-+added two
- end
-";
-        let data = parse_unified_diff("file.rs", diff);
-        // Hunk header + context + modified(removed/added one) + addition(added two) + context = 5
-        assert_eq!(data.lines.len(), 5);
-        assert_eq!(data.lines[2].kind, DiffLineKind::Modified);
-        assert_eq!(data.lines[3].kind, DiffLineKind::Addition);
-        assert_eq!(data.lines[3].right_text, "added two");
+    fn split_diff_insert_delete() {
+        let old = "context\nremoved\nend\n";
+        let new = "context\nadded one\nadded two\nend\n";
+        let data = build_split_diff("file.rs", old, new);
+
+        assert!(data.additions >= 2);
+        assert!(data.deletions >= 1);
+
+        let has_insert = data.lines.iter().any(|l| {
+            l.kind == SplitLineKind::Insert || l.kind == SplitLineKind::Replace
+        });
+        assert!(has_insert);
+    }
+
+    #[test]
+    fn split_diff_new_file() {
+        let data = build_split_diff("new.rs", "", "hello\nworld\n");
+
+        assert_eq!(data.lines.len(), 2);
+        assert!(data.lines.iter().all(|l| l.kind == SplitLineKind::Insert));
+        assert_eq!(data.additions, 2);
+        assert_eq!(data.deletions, 0);
+    }
+
+    #[test]
+    fn split_diff_deleted_file() {
+        let data = build_split_diff("gone.rs", "goodbye\nworld\n", "");
+
+        assert_eq!(data.lines.len(), 2);
+        assert!(data.lines.iter().all(|l| l.kind == SplitLineKind::Delete));
+        assert_eq!(data.additions, 0);
+        assert_eq!(data.deletions, 2);
     }
 }

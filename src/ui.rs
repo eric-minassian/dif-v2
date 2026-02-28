@@ -1,19 +1,24 @@
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, AnyElement, Context, Div, FocusHandle, MouseButton, MouseUpEvent, Window, div,
-    prelude::*, px,
+    actions, AnyElement, Context, FocusHandle, MouseButton, MouseUpEvent, Window, div,
+    prelude::*, px, uniform_list,
 };
+
+use crate::components::{button, empty_state, panel, section_header, PanelSide};
 
 use crate::git;
 use crate::picker;
 use crate::state::{
-    AppConfig, AppState, DiffData, DiffLine, DiffLineKind, GitChange, ProjectRuntime, SavedProject,
-    SavedSession, SessionRuntime, TerminalTab,
+    AppConfig, AppState, DiffData, GitChange, ProjectRuntime, SavedProject, SavedSession,
+    SessionRuntime, SplitLine, SplitLineKind, TerminalTab, LEFT_SIDEBAR_WIDTH,
+    RIGHT_SIDEBAR_WIDTH,
 };
 use crate::storage;
 use crate::terminal;
+use crate::theme::theme;
 
 actions!(
     workspace,
@@ -29,6 +34,9 @@ actions!(
         SelectSideTab8,
         SelectSideTab9,
         CloseDiffView,
+        ToggleLeftSidebar,
+        ToggleRightSidebar,
+        RefreshGitStatus,
     ]
 );
 
@@ -288,30 +296,66 @@ impl WorkspaceView {
         file_path: String,
         status_code: String,
         _event: &MouseUpEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(repo) = self.state.selected_repo.as_ref() else {
+        let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };
 
-        match git::get_file_diff(repo, &file_path, &status_code) {
-            Ok(raw_diff) => {
-                let diff_data = git::parse_unified_diff(&file_path, &raw_diff);
-                self.state.viewing_diff = Some(diff_data);
-            }
-            Err(error) => {
-                self.state.flash_error = Some(format!("Failed to load diff: {error}"));
-            }
-        }
+        let view = cx.entity().clone();
+        let file_path_clone = file_path.clone();
+        let status_code_clone = status_code.clone();
 
-        cx.notify();
+        window
+            .spawn(cx, async move |cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        git::compute_file_diff(&repo, &file_path_clone, &status_code_clone)
+                    })
+                    .await;
+
+                cx.update(|_, cx| {
+                    view.update(cx, |this, cx| {
+                        match result {
+                            Ok(diff_data) => {
+                                this.state.viewing_diff = Some(diff_data);
+                            }
+                            Err(error) => {
+                                this.state.flash_error =
+                                    Some(format!("Failed to load diff: {error}"));
+                            }
+                        }
+                        cx.notify();
+                    })
+                })
+                .ok();
+            })
+            .detach();
     }
 
     fn on_close_diff(&mut self, cx: &mut Context<Self>) {
         self.state.viewing_diff = None;
         cx.notify();
     }
+
+    fn on_toggle_left_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.state.left_sidebar_collapsed = !self.state.left_sidebar_collapsed;
+        cx.notify();
+    }
+
+    fn on_toggle_right_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.state.right_sidebar_collapsed = !self.state.right_sidebar_collapsed;
+        cx.notify();
+    }
+
+    fn on_refresh_git_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(repo) = self.state.selected_repo.clone() {
+            self.start_git_poll(repo, window, cx);
+        }
+    }
+
 
     fn select_side_tab_by_index(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(repo) = self.state.selected_repo.as_ref() else {
@@ -457,7 +501,11 @@ impl WorkspaceView {
         window
             .spawn(cx, async move |cx| {
                 loop {
-                    let snapshot = git::collect_changes(&repo_root);
+                    let repo = repo_root.clone();
+                    let snapshot = cx
+                        .background_executor()
+                        .spawn(async move { git::collect_changes(&repo) })
+                        .await;
 
                     let keep_running = cx
                         .update(|_, cx| {
@@ -473,9 +521,11 @@ impl WorkspaceView {
                                     .runtimes
                                     .entry(repo_root.clone())
                                     .or_insert_with(ProjectRuntime::default);
-                                apply_git_snapshot(runtime, &snapshot);
 
-                                cx.notify();
+                                if apply_git_snapshot(runtime, &snapshot) {
+                                    cx.notify();
+                                }
+
                                 true
                             })
                         })
@@ -485,7 +535,7 @@ impl WorkspaceView {
                         break;
                     }
 
-                    cx.background_executor().timer(Duration::from_secs(1)).await;
+                    cx.background_executor().timer(Duration::from_secs(2)).await;
                 }
             })
             .detach();
@@ -510,42 +560,47 @@ impl WorkspaceView {
     }
 
     fn flash_banner(&self) -> Option<AnyElement> {
+        let t = theme();
         self.state.flash_error.as_ref().map(|message| {
             div()
                 .w_full()
                 .px_3()
                 .py_2()
-                .bg(gpui::red().opacity(0.18))
-                .text_color(gpui::white())
+                .bg(t.error_bg)
+                .text_color(t.text_primary)
                 .child(message.clone())
                 .into_any_element()
         })
     }
 
+    fn on_toggle_project_collapse(
+        &mut self,
+        repo_root: PathBuf,
+        _event: &MouseUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.collapsed_projects.contains(&repo_root) {
+            self.state.collapsed_projects.remove(&repo_root);
+        } else {
+            self.state.collapsed_projects.insert(repo_root);
+        }
+        cx.notify();
+    }
+
     fn render_left_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = theme();
         let selected_repo = self.state.selected_repo.as_ref();
         let selected_session = self.state.selected_session.as_ref();
 
-        div()
-            .w(px(240.))
-            .h_full()
-            .flex()
-            .flex_col()
-            .bg(gpui::rgb(0x101722))
-            .border_r_1()
-            .border_color(gpui::rgb(0x1e293b))
+        panel(PanelSide::Left)
+            .w(px(LEFT_SIDEBAR_WIDTH))
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_3()
+                section_header("Projects")
                     .py_3()
-                    .border_b_1()
-                    .border_color(gpui::rgb(0x1e293b))
-                    .child(div().font_weight(gpui::FontWeight::BOLD).child("Projects"))
                     .child(
                         button()
+                            .text_xs()
                             .child("+ Add")
                             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_add_project)),
                     ),
@@ -559,31 +614,66 @@ impl WorkspaceView {
                     .children(self.state.config.projects.iter().map(|project| {
                         let is_project_selected =
                             selected_repo.is_some_and(|v| v == &project.repo_root);
+                        let is_collapsed = self
+                            .state
+                            .collapsed_projects
+                            .contains(&project.repo_root);
                         let select_repo = project.repo_root.clone();
+                        let toggle_repo = project.repo_root.clone();
                         let remove_repo = project.repo_root.clone();
+                        let add_session_repo = project.repo_root.clone();
 
-                        let mut container = div().flex().flex_col().border_b_1().border_color(
-                            gpui::rgb(0x18212f),
-                        );
+                        let chevron = if is_collapsed { "▸" } else { "▾" };
+
+                        let project_row_id =
+                            gpui::ElementId::Name(format!("proj-{}", project.display_name).into());
+
+                        let mut container =
+                            div().flex().flex_col().border_b_1().border_color(t.border_subtle);
 
                         // Project header row
                         container = container.child(
                             div()
+                                .id(project_row_id)
+                                .group("project-row")
                                 .flex()
                                 .items_center()
-                                .justify_between()
-                                .gap_2()
+                                .gap_1()
                                 .px_3()
                                 .py_2()
                                 .bg(if is_project_selected {
-                                    gpui::rgba(0x1d4ed820)
+                                    t.selection_faint
                                 } else {
-                                    gpui::rgba(0x00000000)
+                                    t.transparent
                                 })
+                                .hover(|style| style.bg(t.hover_overlay))
+                                // Chevron
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(t.text_dim)
+                                        .w(px(12.))
+                                        .flex_shrink_0()
+                                        .cursor_pointer()
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(move |this, event, window, cx| {
+                                                this.on_toggle_project_collapse(
+                                                    toggle_repo.clone(),
+                                                    event,
+                                                    window,
+                                                    cx,
+                                                )
+                                            }),
+                                        )
+                                        .child(chevron),
+                                )
+                                // Project name + path
                                 .child(
                                     div()
                                         .flex_1()
                                         .min_w_0()
+                                        .overflow_hidden()
                                         .when(project.last_known_valid, |row| {
                                             row.cursor_pointer().on_mouse_up(
                                                 MouseButton::Left,
@@ -599,17 +689,19 @@ impl WorkspaceView {
                                         })
                                         .child(
                                             div()
+                                                .text_sm()
                                                 .text_color(if project.last_known_valid {
-                                                    gpui::rgb(0xffffff)
+                                                    t.text_primary
                                                 } else {
-                                                    gpui::rgb(0x94a3b8)
+                                                    t.text_muted
                                                 })
                                                 .child(project.display_name.clone()),
                                         )
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .text_color(gpui::rgb(0x64748b))
+                                                .text_color(t.text_dim)
+                                                .overflow_hidden()
                                                 .child(if project.last_known_valid {
                                                     project.repo_root.display().to_string()
                                                 } else {
@@ -620,21 +712,70 @@ impl WorkspaceView {
                                                 }),
                                         ),
                                 )
-                                .child(button().px_2().child("x").on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event, window, cx| {
-                                        this.on_remove_project(
-                                            remove_repo.clone(),
-                                            event,
-                                            window,
-                                            cx,
-                                        )
-                                    }),
-                                )),
+                                // Actions: + session, x remove (hover-only)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .flex_shrink_0()
+                                        .invisible()
+                                        .group_hover("project-row", |style| style.visible())
+                                        .when(project.last_known_valid, |el| {
+                                            el.child(
+                                                div()
+                                                    .id("add-session-btn")
+                                                    .cursor_pointer()
+                                                    .px_1()
+                                                    .text_xs()
+                                                    .text_color(t.text_dim)
+                                                    .hover(|style| {
+                                                        style.text_color(t.text_primary)
+                                                    })
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(
+                                                            move |this, event, window, cx| {
+                                                                this.on_add_session(
+                                                                    add_session_repo.clone(),
+                                                                    event,
+                                                                    window,
+                                                                    cx,
+                                                                )
+                                                            },
+                                                        ),
+                                                    )
+                                                    .child("+"),
+                                            )
+                                        })
+                                        .child(
+                                            div()
+                                                .id("remove-project-btn")
+                                                .cursor_pointer()
+                                                .px_1()
+                                                .text_xs()
+                                                .text_color(t.text_dim)
+                                                .hover(|style| style.text_color(t.accent_red))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |this, event, window, cx| {
+                                                            this.on_remove_project(
+                                                                remove_repo.clone(),
+                                                                event,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    ),
+                                                )
+                                                .child("×"),
+                                        ),
+                                ),
                         );
 
-                        // Session rows (only for valid projects)
-                        if project.last_known_valid {
+                        // Session rows (only when expanded and valid)
+                        if project.last_known_valid && !is_collapsed {
                             for session in &project.sessions {
                                 let session_repo = project.repo_root.clone();
                                 let session_id = session.id.clone();
@@ -643,8 +784,14 @@ impl WorkspaceView {
                                 let is_session_selected = is_project_selected
                                     && selected_session.is_some_and(|s| s == &session.id);
 
+                                let session_row_id = gpui::ElementId::Name(
+                                    format!("sess-{}-{}", project.display_name, session.id).into(),
+                                );
+
                                 container = container.child(
                                     div()
+                                        .id(session_row_id)
+                                        .group("session-row")
                                         .flex()
                                         .items_center()
                                         .justify_between()
@@ -652,10 +799,11 @@ impl WorkspaceView {
                                         .pr_3()
                                         .py_1()
                                         .bg(if is_session_selected {
-                                            gpui::rgba(0x1d4ed838)
+                                            t.selection_medium
                                         } else {
-                                            gpui::rgba(0x00000000)
+                                            t.transparent
                                         })
+                                        .hover(|style| style.bg(t.hover_overlay))
                                         .child(
                                             div()
                                                 .flex_1()
@@ -679,19 +827,25 @@ impl WorkspaceView {
                                                     div()
                                                         .text_sm()
                                                         .text_color(if is_session_selected {
-                                                            gpui::rgb(0x93c5fd)
+                                                            t.accent
                                                         } else {
-                                                            gpui::rgb(0xcbd5e1)
+                                                            t.text_secondary
                                                         })
                                                         .child(session.name.clone()),
                                                 ),
                                         )
                                         .child(
                                             div()
+                                                .id("delete-session-btn")
                                                 .cursor_pointer()
                                                 .px_1()
                                                 .text_xs()
-                                                .text_color(gpui::rgb(0x64748b))
+                                                .text_color(t.text_dim)
+                                                .invisible()
+                                                .group_hover("session-row", |style| {
+                                                    style.visible()
+                                                })
+                                                .hover(|style| style.text_color(t.accent_red))
                                                 .on_mouse_up(
                                                     MouseButton::Left,
                                                     cx.listener(
@@ -706,37 +860,10 @@ impl WorkspaceView {
                                                         },
                                                     ),
                                                 )
-                                                .child("x"),
+                                                .child("×"),
                                         ),
                                 );
                             }
-
-                            // "+ New Session" button
-                            let add_session_repo = project.repo_root.clone();
-                            container = container.child(
-                                div()
-                                    .pl(px(28.))
-                                    .pr_3()
-                                    .py_1()
-                                    .cursor_pointer()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |this, event, window, cx| {
-                                            this.on_add_session(
-                                                add_session_repo.clone(),
-                                                event,
-                                                window,
-                                                cx,
-                                            )
-                                        }),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(gpui::rgb(0x64748b))
-                                            .child("+ New Session"),
-                                    ),
-                            );
                         }
 
                         container
@@ -745,33 +872,106 @@ impl WorkspaceView {
             .into_any_element()
     }
 
+    fn render_titlebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = theme();
+        let left_collapsed = self.state.left_sidebar_collapsed;
+        let right_collapsed = self.state.right_sidebar_collapsed;
+
+        div()
+            .h(px(36.))
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_between()
+            .bg(t.bg_titlebar)
+            .border_b_1()
+            .border_color(t.border_subtle)
+            // Left side: traffic light padding + sidebar toggle
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .pl(px(78.))
+                    .child(
+                        div()
+                            .id("toggle-left-sidebar")
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_xs()
+                            .text_color(if left_collapsed {
+                                t.text_dim
+                            } else {
+                                t.text_muted
+                            })
+                            .hover(|style| {
+                                style.text_color(t.text_primary).cursor_pointer()
+                            })
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _window, cx| {
+                                    this.on_toggle_left_sidebar(cx);
+                                }),
+                            )
+                            .child("⊞"),
+                    ),
+            )
+            // Right side: sidebar toggle
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .pr_2()
+                    .child(
+                        div()
+                            .id("toggle-right-sidebar")
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_xs()
+                            .text_color(if right_collapsed {
+                                t.text_dim
+                            } else {
+                                t.text_muted
+                            })
+                            .hover(|style| {
+                                style.text_color(t.text_primary).cursor_pointer()
+                            })
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _window, cx| {
+                                    this.on_toggle_right_sidebar(cx);
+                                }),
+                            )
+                            .child("⊟"),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_collapsed_left_sidebar(&self) -> AnyElement {
+        div().into_any_element()
+    }
+
     fn render_center(&self, cx: &mut Context<Self>) -> AnyElement {
         if let Some(diff_data) = &self.state.viewing_diff {
             return self.render_diff_view(diff_data, cx);
         }
 
         if self.state.selected_repo.is_none() {
-            return self
-                .empty_card("Add a Git repository from the left sidebar.")
-                .into_any_element();
+            return empty_state("Add a Git repository from the left sidebar.").into_any_element();
         }
 
         if self.state.selected_session.is_none() {
-            return self
-                .empty_card("No sessions. Create one from the sidebar.")
-                .into_any_element();
+            return empty_state("No sessions. Create one from the sidebar.").into_any_element();
         }
 
         let Some(session_runtime) = self.selected_session_runtime() else {
-            return self
-                .empty_card("Loading session...")
-                .into_any_element();
+            return empty_state("Loading session...").into_any_element();
         };
 
         if let Some(error) = &session_runtime.main_terminal_error {
-            return self
-                .empty_card(&format!("Terminal failed to start: {error}"))
-                .into_any_element();
+            return empty_state(&format!("Terminal failed to start: {error}")).into_any_element();
         }
 
         if let Some(terminal) = &session_runtime.main_terminal {
@@ -784,28 +984,26 @@ impl WorkspaceView {
                 .into_any_element();
         }
 
-        self.empty_card("Starting terminal...")
-            .into_any_element()
+        empty_state("Starting terminal...").into_any_element()
     }
 
     fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let top = self.render_changes_panel(cx);
         let bottom = self.render_side_terminal(cx);
 
-        div()
-            .w(px(320.))
-            .h_full()
-            .flex()
-            .flex_col()
-            .bg(gpui::rgb(0x0f172a))
-            .border_l_1()
-            .border_color(gpui::rgb(0x1e293b))
+        panel(PanelSide::Right)
+            .w(px(RIGHT_SIDEBAR_WIDTH))
             .child(top)
             .child(bottom)
             .into_any_element()
     }
 
+    fn render_collapsed_right_sidebar(&self) -> AnyElement {
+        div().into_any_element()
+    }
+
     fn render_changes_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = theme();
         let snapshot = self
             .selected_project_runtime()
             .map(|runtime| &runtime.git_snapshot);
@@ -813,6 +1011,7 @@ impl WorkspaceView {
             .map(|snapshot| snapshot.changes.as_slice())
             .unwrap_or(&[]);
         let error = snapshot.and_then(|snapshot| snapshot.last_error.as_ref());
+        let count = changes.len();
 
         div()
             .flex_1()
@@ -820,25 +1019,27 @@ impl WorkspaceView {
             .flex()
             .flex_col()
             .border_b_1()
-            .border_color(gpui::rgb(0x1e293b))
+            .border_color(t.border_default)
             .child(
-                div()
-                    .px_3()
-                    .py_2()
-                    .border_b_1()
-                    .border_color(gpui::rgb(0x1e293b))
-                    .child("Changes"),
+                section_header("Changes").when(count > 0, |header| {
+                    header.child(
+                        div()
+                            .text_xs()
+                            .text_color(t.text_dim)
+                            .child(format!("{count}")),
+                    )
+                }),
             )
-            .when_some(error, |panel, message| {
-                panel.child(
+            .when_some(error, |p, message| {
+                p.child(
                     div()
                         .mx_3()
-                        .mt_3()
+                        .mt_1()
                         .px_2()
                         .py_1()
                         .text_xs()
-                        .bg(gpui::red().opacity(0.16))
-                        .text_color(gpui::white())
+                        .bg(t.error_bg)
+                        .text_color(t.text_primary)
                         .child(message.clone()),
                 )
             })
@@ -849,7 +1050,13 @@ impl WorkspaceView {
                     .min_h_0()
                     .overflow_scroll()
                     .children(if changes.is_empty() {
-                        vec![Self::empty_change_row("Working tree clean")]
+                        vec![div()
+                            .px_3()
+                            .py_2()
+                            .text_xs()
+                            .text_color(t.text_dim)
+                            .child("Working tree clean".to_string())
+                            .into_any_element()]
                     } else {
                         changes
                             .iter()
@@ -861,6 +1068,7 @@ impl WorkspaceView {
     }
 
     fn render_change_row(&self, change: &GitChange, cx: &mut Context<Self>) -> AnyElement {
+        let t = theme();
         let file_path = change.path.clone();
         let status_code = change.status_code.clone();
 
@@ -870,20 +1078,30 @@ impl WorkspaceView {
             .as_ref()
             .is_some_and(|d| d.file_path == change.path);
 
+        let status_color = match change.status_code.as_str() {
+            "A" | "??" => t.accent_green,
+            "D" => t.accent_red,
+            _ => t.text_muted,
+        };
+
+        let change_row_id =
+            gpui::ElementId::Name(format!("change-{}", change.path).into());
+
         div()
+            .id(change_row_id)
+            .group("change-row")
             .flex()
-            .gap_2()
+            .items_center()
+            .gap_1()
             .px_3()
-            .py_2()
-            .border_b_1()
-            .border_color(gpui::rgb(0x18212f))
+            .py_1()
             .bg(if is_viewing {
-                gpui::rgba(0x1d4ed830)
+                t.selection_medium
             } else {
-                gpui::rgba(0x00000000)
+                t.transparent
             })
             .cursor_pointer()
-            .hover(|style| style.bg(gpui::rgba(0x1e293b80)))
+            .hover(|style| style.bg(t.hover_overlay))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, event, window, cx| {
@@ -892,51 +1110,56 @@ impl WorkspaceView {
             )
             .child(
                 div()
-                    .min_w(px(34.))
                     .text_xs()
-                    .text_color(gpui::rgb(0x93c5fd))
+                    .text_color(status_color)
+                    .w(px(20.))
+                    .flex_shrink_0()
                     .child(change.status_code.clone()),
             )
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_color(gpui::white())
+                    .overflow_hidden()
+                    .text_sm()
+                    .text_color(if is_viewing {
+                        t.text_primary
+                    } else {
+                        t.text_secondary
+                    })
                     .child(change.path.clone()),
             )
-            .when_some(change.additions, |row, adds| {
-                row.child(
-                    div()
-                        .text_xs()
-                        .text_color(gpui::rgb(0x4ade80))
-                        .child(format!("+{adds}")),
-                )
-            })
-            .when_some(change.deletions.filter(|&d| d > 0), |row, dels| {
-                row.child(
-                    div()
-                        .text_xs()
-                        .text_color(gpui::rgb(0xf87171))
-                        .child(format!("-{dels}")),
-                )
-            })
-            .into_any_element()
-    }
-
-    fn empty_change_row(message: &str) -> AnyElement {
-        div()
-            .px_3()
-            .py_3()
-            .text_color(gpui::rgb(0x64748b))
-            .child(message.to_string())
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .flex_shrink_0()
+                    .invisible()
+                    .group_hover("change-row", |style| style.visible())
+                    .when_some(change.additions, |el, adds| {
+                        el.child(
+                            div()
+                                .text_xs()
+                                .text_color(t.accent_green)
+                                .child(format!("+{adds}")),
+                        )
+                    })
+                    .when_some(change.deletions.filter(|&d| d > 0), |el, dels| {
+                        el.child(
+                            div()
+                                .text_xs()
+                                .text_color(t.accent_red)
+                                .child(format!("-{dels}")),
+                        )
+                    }),
+            )
             .into_any_element()
     }
 
     fn render_side_terminal(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(session_runtime) = self.selected_session_runtime() else {
-            return self
-                .empty_card("Select a session to start terminals.")
-                .into_any_element();
+            return empty_state("Select a session to start terminals.").into_any_element();
         };
 
         let tab_bar = self.render_tab_bar(session_runtime, cx);
@@ -953,13 +1176,12 @@ impl WorkspaceView {
                         .child(tab.view.clone())
                         .into_any_element()
                 } else {
-                    self.empty_card("No terminal selected.").into_any_element()
+                    empty_state("No terminal selected.").into_any_element()
                 }
             } else if session_runtime.side_tabs.is_empty() {
-                self.empty_card("Click + to add a terminal.")
-                    .into_any_element()
+                empty_state("Click + to add a terminal.").into_any_element()
             } else {
-                self.empty_card("No terminal selected.").into_any_element()
+                empty_state("No terminal selected.").into_any_element()
             };
 
         div()
@@ -977,6 +1199,7 @@ impl WorkspaceView {
         session_runtime: &SessionRuntime,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let t = theme();
         let selected_id = session_runtime.selected_side_tab.as_ref();
 
         div()
@@ -986,8 +1209,8 @@ impl WorkspaceView {
             .px_2()
             .py_1()
             .border_b_1()
-            .border_color(gpui::rgb(0x1e293b))
-            .bg(gpui::rgb(0x0f172a))
+            .border_color(t.border_default)
+            .bg(t.bg_surface)
             .children(session_runtime.side_tabs.iter().map(|tab| {
                 let is_selected = selected_id.is_some_and(|s| s == &tab.id);
                 let select_tab_id = tab.id.clone();
@@ -1001,18 +1224,18 @@ impl WorkspaceView {
                     .py_1()
                     .rounded_md()
                     .bg(if is_selected {
-                        gpui::rgb(0x1e293b)
+                        t.bg_elevated
                     } else {
-                        gpui::rgba(0x00000000)
+                        t.transparent
                     })
                     .child(
                         div()
                             .cursor_pointer()
                             .text_xs()
                             .text_color(if is_selected {
-                                gpui::rgb(0xffffff)
+                                t.text_primary
                             } else {
-                                gpui::rgb(0x94a3b8)
+                                t.text_muted
                             })
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -1026,7 +1249,7 @@ impl WorkspaceView {
                         div()
                             .cursor_pointer()
                             .text_xs()
-                            .text_color(gpui::rgb(0x475569))
+                            .text_color(t.text_line_number)
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(move |this, _event, _window, cx| {
@@ -1042,7 +1265,7 @@ impl WorkspaceView {
                     .px_2()
                     .py_1()
                     .text_xs()
-                    .text_color(gpui::rgb(0x64748b))
+                    .text_color(t.text_dim)
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _event, window, cx| {
@@ -1055,53 +1278,70 @@ impl WorkspaceView {
     }
 
     fn render_diff_view(&self, diff_data: &DiffData, cx: &mut Context<Self>) -> AnyElement {
-        let file_path = diff_data.file_path.clone();
+        let t = theme();
 
         let header = div()
             .flex()
             .items_center()
             .justify_between()
             .px_3()
-            .py_2()
-            .bg(gpui::rgb(0x0f172a))
+            .py_1()
+            .bg(t.bg_panel)
             .border_b_1()
-            .border_color(gpui::rgb(0x1e293b))
+            .border_color(t.border_default)
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
+                    .text_sm()
                     .child(
                         div()
-                            .text_color(gpui::rgb(0x94a3b8))
-                            .text_sm()
-                            .child("Diff:"),
+                            .text_color(t.text_secondary)
+                            .child(diff_data.file_path.clone()),
                     )
-                    .child(div().text_color(gpui::white()).child(file_path)),
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.accent_green)
+                            .child(format!("+{}", diff_data.additions)),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.accent_red)
+                            .child(format!("-{}", diff_data.deletions)),
+                    ),
             )
             .child(
-                button()
-                    .child("Close (Esc)")
+                div()
+                    .id("close-diff")
+                    .cursor_pointer()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .text_color(t.text_dim)
+                    .hover(|style| style.text_color(t.text_primary))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _event, _window, cx| {
                             this.on_close_diff(cx);
                         }),
-                    ),
+                    )
+                    .child("✕ Esc"),
             );
 
-        let diff_rows = div()
-            .id("diff-scroll")
-            .flex_1()
-            .min_h_0()
-            .overflow_scroll()
-            .bg(gpui::rgb(0x020617))
-            .children(
-                diff_data
-                    .lines
-                    .iter()
-                    .map(|line| render_diff_line(line)),
-            );
+        let lines = Rc::new(diff_data.lines.clone());
+        let line_count = lines.len();
+
+        let diff_list = uniform_list("diff-lines", line_count, move |range, _window, _cx| {
+            range
+                .map(|ix| render_split_line(&lines[ix]))
+                .collect::<Vec<_>>()
+        })
+        .flex_1()
+        .min_h_0()
+        .bg(t.bg_base);
 
         div()
             .flex_1()
@@ -1110,30 +1350,27 @@ impl WorkspaceView {
             .flex()
             .flex_col()
             .child(header)
-            .child(diff_rows)
+            .child(diff_list)
             .into_any_element()
-    }
-
-    fn empty_card(&self, message: &str) -> Div {
-        div()
-            .flex_1()
-            .min_h_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(gpui::rgb(0x020617))
-            .text_color(gpui::rgb(0x94a3b8))
-            .child(
-                div()
-                    .max_w(px(320.))
-                    .text_center()
-                    .child(message.to_string()),
-            )
     }
 }
 
 impl Render for WorkspaceView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = theme();
+
+        let left = if self.state.left_sidebar_collapsed {
+            self.render_collapsed_left_sidebar()
+        } else {
+            self.render_left_sidebar(cx)
+        };
+
+        let right = if self.state.right_sidebar_collapsed {
+            self.render_collapsed_right_sidebar()
+        } else {
+            self.render_right_sidebar(cx)
+        };
+
         div()
             .id("workspace")
             .track_focus(&self.focus_handle)
@@ -1142,6 +1379,15 @@ impl Render for WorkspaceView {
             }))
             .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
                 this.on_close_diff(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleLeftSidebar, _window, cx| {
+                this.on_toggle_left_sidebar(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleRightSidebar, _window, cx| {
+                this.on_toggle_right_sidebar(cx);
+            }))
+            .on_action(cx.listener(|this, _: &RefreshGitStatus, window, cx| {
+                this.on_refresh_git_status(window, cx);
             }))
             .on_action(cx.listener(|this, _: &SelectSideTab1, _w, cx| {
                 this.select_side_tab_by_index(0, cx);
@@ -1173,17 +1419,18 @@ impl Render for WorkspaceView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(gpui::rgb(0x020617))
-            .text_color(gpui::white())
+            .bg(t.bg_base)
+            .text_color(t.text_primary)
+            .child(self.render_titlebar(cx))
             .children(self.flash_banner())
             .child(
                 div()
                     .flex_1()
                     .min_h_0()
                     .flex()
-                    .child(self.render_left_sidebar(cx))
+                    .child(left)
                     .child(self.render_center(cx))
-                    .child(self.render_right_sidebar(cx)),
+                    .child(right),
             )
     }
 }
@@ -1194,69 +1441,71 @@ fn refresh_project_validity(projects: &mut [SavedProject]) {
     }
 }
 
-fn apply_git_snapshot(runtime: &mut ProjectRuntime, snapshot: &Result<Vec<GitChange>, String>) {
+/// Returns `true` if the snapshot actually changed (so callers know whether to re-render).
+fn apply_git_snapshot(
+    runtime: &mut ProjectRuntime,
+    snapshot: &Result<Vec<GitChange>, String>,
+) -> bool {
     runtime.git_snapshot.last_refresh = Some(Instant::now());
 
     match snapshot {
         Ok(changes) => {
+            let changed = runtime.git_snapshot.changes != *changes
+                || runtime.git_snapshot.last_error.is_some();
             runtime.git_snapshot.changes = changes.clone();
             runtime.git_snapshot.last_error = None;
+            changed
         }
         Err(error) => {
+            let changed = runtime.git_snapshot.last_error.as_ref() != Some(error);
             runtime.git_snapshot.last_error = Some(error.clone());
+            changed
         }
     }
 }
 
-fn button() -> Div {
-    div()
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .bg(gpui::rgb(0x1e293b))
-        .text_color(gpui::white())
-        .hover(|style| style.bg(gpui::rgb(0x334155)).cursor_pointer())
-}
+fn render_split_line(line: &SplitLine) -> AnyElement {
+    let t = theme();
 
-fn render_diff_line(line: &DiffLine) -> AnyElement {
     let (left_bg, right_bg) = match line.kind {
-        DiffLineKind::Context => (gpui::rgba(0x00000000), gpui::rgba(0x00000000)),
-        DiffLineKind::Addition => (gpui::rgba(0x00000000), gpui::rgba(0x22c55e18)),
-        DiffLineKind::Deletion => (gpui::rgba(0xef444418), gpui::rgba(0x00000000)),
-        DiffLineKind::Modified => (gpui::rgba(0xef444418), gpui::rgba(0x22c55e18)),
+        SplitLineKind::Equal => (t.transparent, t.transparent),
+        SplitLineKind::Insert => (t.transparent, t.diff_add_bg),
+        SplitLineKind::Delete => (t.diff_del_bg, t.transparent),
+        SplitLineKind::Replace => (t.diff_del_bg, t.diff_add_bg),
     };
 
     let left_text_color = match line.kind {
-        DiffLineKind::Deletion | DiffLineKind::Modified => gpui::rgb(0xfca5a5),
-        _ => gpui::rgb(0xcbd5e1),
+        SplitLineKind::Delete | SplitLineKind::Replace => t.diff_del_text,
+        _ => t.text_secondary,
     };
 
     let right_text_color = match line.kind {
-        DiffLineKind::Addition | DiffLineKind::Modified => gpui::rgb(0x86efac),
-        _ => gpui::rgb(0xcbd5e1),
+        SplitLineKind::Insert | SplitLineKind::Replace => t.diff_add_text,
+        _ => t.text_secondary,
     };
-
-    let line_num_color = gpui::rgb(0x475569);
 
     div()
         .flex()
         .w_full()
-        .text_sm()
+        .text_xs()
+        .whitespace_nowrap()
         .child(
-            // Left half
+            // Left half (old)
             div()
                 .flex_1()
+                .min_w_0()
                 .flex()
+                .overflow_hidden()
                 .bg(left_bg)
                 .child(
                     div()
-                        .w(px(48.))
+                        .w(px(40.))
+                        .flex_shrink_0()
                         .text_right()
-                        .px_2()
-                        .text_color(line_num_color)
-                        .text_xs()
+                        .px_1()
+                        .text_color(t.text_line_number)
                         .child(
-                            line.left_number
+                            line.old_lineno
                                 .map(|n| n.to_string())
                                 .unwrap_or_default(),
                         ),
@@ -1265,30 +1514,33 @@ fn render_diff_line(line: &DiffLine) -> AnyElement {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .px_2()
+                        .truncate()
+                        .px_1()
                         .text_color(left_text_color)
-                        .child(line.left_text.clone()),
+                        .child(line.old_text.clone()),
                 ),
         )
         .child(
             // Divider
-            div().w(px(1.)).bg(gpui::rgb(0x1e293b)),
+            div().w(px(1.)).flex_shrink_0().bg(t.border_default),
         )
         .child(
-            // Right half
+            // Right half (new)
             div()
                 .flex_1()
+                .min_w_0()
                 .flex()
+                .overflow_hidden()
                 .bg(right_bg)
                 .child(
                     div()
-                        .w(px(48.))
+                        .w(px(40.))
+                        .flex_shrink_0()
                         .text_right()
-                        .px_2()
-                        .text_color(line_num_color)
-                        .text_xs()
+                        .px_1()
+                        .text_color(t.text_line_number)
                         .child(
-                            line.right_number
+                            line.new_lineno
                                 .map(|n| n.to_string())
                                 .unwrap_or_default(),
                         ),
@@ -1297,9 +1549,10 @@ fn render_diff_line(line: &DiffLine) -> AnyElement {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .px_2()
+                        .truncate()
+                        .px_1()
                         .text_color(right_text_color)
-                        .child(line.right_text.clone()),
+                        .child(line.new_text.clone()),
                 ),
         )
         .into_any_element()

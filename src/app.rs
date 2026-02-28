@@ -1,9 +1,10 @@
-use gpui::{App, AppContext, Application, KeyBinding, WindowOptions};
+use gpui::{App, AppContext, Application, KeyBinding, TitlebarOptions, WindowOptions, point, px};
 
 use crate::storage;
 use crate::ui::{
-    CloseDiffView, NewSideTab, SelectSideTab1, SelectSideTab2, SelectSideTab3, SelectSideTab4,
-    SelectSideTab5, SelectSideTab6, SelectSideTab7, SelectSideTab8, SelectSideTab9, WorkspaceView,
+    CloseDiffView, NewSideTab, RefreshGitStatus, SelectSideTab1, SelectSideTab2, SelectSideTab3,
+    SelectSideTab4, SelectSideTab5, SelectSideTab6, SelectSideTab7, SelectSideTab8, SelectSideTab9,
+    ToggleLeftSidebar, ToggleRightSidebar, WorkspaceView,
 };
 
 pub fn run() {
@@ -11,6 +12,9 @@ pub fn run() {
         cx.bind_keys([
             KeyBinding::new("escape", CloseDiffView, None),
             KeyBinding::new("cmd-t", NewSideTab, None),
+            KeyBinding::new("cmd-b", ToggleLeftSidebar, None),
+            KeyBinding::new("cmd-shift-b", ToggleRightSidebar, None),
+            KeyBinding::new("cmd-r", RefreshGitStatus, None),
             KeyBinding::new("cmd-1", SelectSideTab1, None),
             KeyBinding::new("cmd-2", SelectSideTab2, None),
             KeyBinding::new("cmd-3", SelectSideTab3, None),
@@ -24,7 +28,16 @@ pub fn run() {
 
         let config = storage::load_config().unwrap_or_default();
 
-        cx.open_window(WindowOptions::default(), |window, cx| {
+        let window_options = WindowOptions {
+            titlebar: Some(TitlebarOptions {
+                appears_transparent: true,
+                traffic_light_position: Some(point(px(9.0), px(9.0))),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        cx.open_window(window_options, |window, cx| {
             cx.new(|cx| WorkspaceView::new(config, window, cx))
         })
         .expect("failed to open the main window");

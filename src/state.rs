@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -66,6 +66,9 @@ impl SavedProject {
     }
 }
 
+pub const LEFT_SIDEBAR_WIDTH: f32 = 240.0;
+pub const RIGHT_SIDEBAR_WIDTH: f32 = 320.0;
+
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct AppConfig {
     pub projects: Vec<SavedProject>,
@@ -82,26 +85,28 @@ pub struct GitChange {
 }
 
 #[derive(Clone, Debug)]
-pub struct DiffLine {
-    pub left_number: Option<u32>,
-    pub left_text: String,
-    pub right_number: Option<u32>,
-    pub right_text: String,
-    pub kind: DiffLineKind,
+pub struct SplitLine {
+    pub old_lineno: Option<u32>,
+    pub new_lineno: Option<u32>,
+    pub old_text: String,
+    pub new_text: String,
+    pub kind: SplitLineKind,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DiffLineKind {
-    Context,
-    Addition,
-    Deletion,
-    Modified,
+pub enum SplitLineKind {
+    Equal,
+    Delete,
+    Insert,
+    Replace,
 }
 
 #[derive(Clone, Debug)]
 pub struct DiffData {
     pub file_path: String,
-    pub lines: Vec<DiffLine>,
+    pub lines: Vec<SplitLine>,
+    pub additions: u32,
+    pub deletions: u32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -160,4 +165,7 @@ pub struct AppState {
     pub flash_error: Option<String>,
     pub git_poll_generation: u64,
     pub viewing_diff: Option<DiffData>,
+    pub left_sidebar_collapsed: bool,
+    pub right_sidebar_collapsed: bool,
+    pub collapsed_projects: HashSet<PathBuf>,
 }

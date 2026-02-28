@@ -1,0 +1,83 @@
+use std::sync::LazyLock;
+
+use gpui::Hsla;
+
+pub struct Theme {
+    // Surfaces
+    pub bg_base: Hsla,
+    pub bg_surface: Hsla,
+    pub bg_panel: Hsla,
+    pub bg_elevated: Hsla,
+    pub bg_elevated_hover: Hsla,
+    pub bg_titlebar: Hsla,
+
+    // Borders
+    pub border_default: Hsla,
+    pub border_subtle: Hsla,
+
+    // Text
+    pub text_primary: Hsla,
+    pub text_secondary: Hsla,
+    pub text_muted: Hsla,
+    pub text_dim: Hsla,
+    pub text_line_number: Hsla,
+
+    // Accents
+    pub accent: Hsla,
+    pub accent_green: Hsla,
+    pub accent_red: Hsla,
+    pub diff_add_text: Hsla,
+    pub diff_del_text: Hsla,
+
+    // Alpha / overlays
+    pub transparent: Hsla,
+    pub selection_faint: Hsla,
+    pub selection_medium: Hsla,
+    pub hover_overlay: Hsla,
+    pub diff_add_bg: Hsla,
+    pub diff_del_bg: Hsla,
+    pub error_bg: Hsla,
+
+}
+
+static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
+    // Surfaces — neutral grays matching terminal #1E1E1E
+    bg_base: gpui::rgb(0x181818).into(),
+    bg_surface: gpui::rgb(0x1e1e1e).into(),
+    bg_panel: gpui::rgb(0x222222).into(),
+    bg_elevated: gpui::rgb(0x2d2d2d).into(),
+    bg_elevated_hover: gpui::rgb(0x3a3a3a).into(),
+    bg_titlebar: gpui::rgb(0x1b1b1b).into(),
+
+    // Borders
+    border_default: gpui::rgb(0x333333).into(),
+    border_subtle: gpui::rgb(0x2a2a2a).into(),
+
+    // Text — matching terminal foreground #D4D4D4
+    text_primary: gpui::rgb(0xd4d4d4).into(),
+    text_secondary: gpui::rgb(0xb0b0b0).into(),
+    text_muted: gpui::rgb(0x888888).into(),
+    text_dim: gpui::rgb(0x666666).into(),
+    text_line_number: gpui::rgb(0x555555).into(),
+
+    // Accents — using terminal ANSI palette
+    accent: gpui::rgb(0xd4d4d4).into(),
+    accent_green: gpui::rgb(0x8ae234).into(),
+    accent_red: gpui::rgb(0xef2929).into(),
+    diff_add_text: gpui::rgb(0x8ae234).into(),
+    diff_del_text: gpui::rgb(0xef2929).into(),
+
+    // Alpha / overlays — neutral gray tints
+    transparent: gpui::rgba(0x00000000).into(),
+    selection_faint: gpui::rgba(0xffffff10).into(),
+    selection_medium: gpui::rgba(0xffffff22).into(),
+    hover_overlay: gpui::rgba(0xffffff0c).into(),
+    diff_add_bg: gpui::rgba(0x4e9a0618).into(),
+    diff_del_bg: gpui::rgba(0xcc000018).into(),
+    error_bg: gpui::rgba(0xef292930).into(),
+
+});
+
+pub fn theme() -> &'static Theme {
+    &THEME
+}

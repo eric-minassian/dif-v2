@@ -1,13 +1,15 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::git;
+
 pub fn normalize_repo_path(path: &Path) -> Result<PathBuf, String> {
     let expanded = expand_tilde(path);
     let canonical = expanded
         .canonicalize()
         .map_err(|error| format!("failed to access {}: {error}", expanded.display()))?;
 
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(&canonical)
         .args(["rev-parse", "--show-toplevel"])
@@ -30,7 +32,7 @@ pub fn is_valid_repo(path: &Path) -> bool {
 }
 
 pub fn get_branch_name(worktree: &Path) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(worktree)
         .args(["rev-parse", "--abbrev-ref", "HEAD"])

@@ -3,11 +3,13 @@ use std::process::Command;
 
 use similar::TextDiff;
 
+use super::git;
+
 use crate::state::{DiffData, SplitLine, SplitLineKind};
 
 /// Get the committed (HEAD) version of a file from git.
 fn get_base_content(repo_root: &Path, file_path: &str) -> Option<String> {
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(repo_root)
         .args(["show", &format!("HEAD:{file_path}")])

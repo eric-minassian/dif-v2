@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::git;
 use super::repo::home_dir;
 
 pub fn create_worktree(
@@ -28,7 +29,7 @@ pub fn create_worktree(
         .map_err(|e| format!("failed to create ~/.dif: {e}"))?;
 
     // Detect the default branch from origin (main, master, etc.)
-    let default_branch = Command::new("git")
+    let default_branch = Command::new(git())
         .arg("-C")
         .arg(repo_root)
         .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
@@ -43,13 +44,13 @@ pub fn create_worktree(
 
     // Fetch latest so the worktree isn't based on a stale local ref
     let fetch_branch = default_branch.strip_prefix("origin/").unwrap_or(&default_branch);
-    let _ = Command::new("git")
+    let _ = Command::new(git())
         .arg("-C")
         .arg(repo_root)
         .args(["fetch", "origin", fetch_branch])
         .output();
 
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(repo_root)
         .args(["worktree", "add", "-b", &branch_name])
@@ -69,7 +70,7 @@ pub fn create_worktree(
 }
 
 pub fn remove_worktree(repo_root: &Path, worktree_path: &Path) {
-    let _ = Command::new("git")
+    let _ = Command::new(git())
         .arg("-C")
         .arg(repo_root)
         .args(["worktree", "remove", "--force"])

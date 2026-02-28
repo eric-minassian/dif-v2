@@ -104,11 +104,10 @@ impl WorkspaceView {
         if files.is_empty() {
             return;
         }
-        let message = if runtime.commit_message.trim().is_empty() {
-            "wip".to_string()
-        } else {
-            runtime.commit_message.clone()
-        };
+        if runtime.commit_message.trim().is_empty() {
+            return;
+        }
+        let message = runtime.commit_message.clone();
         runtime.action_phase = ActionPhase::Working("Committing...".into());
         cx.notify();
 

@@ -2,9 +2,10 @@ use std::path::Path;
 use std::process::Command;
 
 use super::repo::get_branch_name;
+use super::{gh, git};
 
 pub fn commit_selected(worktree: &Path, files: &[String], message: &str) -> Result<(), String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(git());
     cmd.arg("-C").arg(worktree).arg("add").arg("--");
     for file in files {
         cmd.arg(file);
@@ -17,7 +18,7 @@ pub fn commit_selected(worktree: &Path, files: &[String], message: &str) -> Resu
         ));
     }
 
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(worktree)
         .args(["commit", "-m", message])
@@ -35,7 +36,7 @@ pub fn commit_selected(worktree: &Path, files: &[String], message: &str) -> Resu
 }
 
 pub fn amend_selected(worktree: &Path, files: &[String]) -> Result<(), String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(git());
     cmd.arg("-C").arg(worktree).arg("add").arg("--");
     for file in files {
         cmd.arg(file);
@@ -48,7 +49,7 @@ pub fn amend_selected(worktree: &Path, files: &[String]) -> Result<(), String> {
         ));
     }
 
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(worktree)
         .args(["commit", "--amend", "--no-edit"])
@@ -68,7 +69,7 @@ pub fn amend_selected(worktree: &Path, files: &[String]) -> Result<(), String> {
 pub fn push(worktree: &Path) -> Result<(), String> {
     let branch = get_branch_name(worktree)?;
 
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(worktree)
         .args(["push", "-u", "origin", &branch])
@@ -88,7 +89,7 @@ pub fn push(worktree: &Path) -> Result<(), String> {
 pub fn force_push(worktree: &Path) -> Result<(), String> {
     let branch = get_branch_name(worktree)?;
 
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(worktree)
         .args(["push", "--force-with-lease", "-u", "origin", &branch])
@@ -106,7 +107,7 @@ pub fn force_push(worktree: &Path) -> Result<(), String> {
 }
 
 pub fn create_pr(worktree: &Path, title: &str) -> Result<String, String> {
-    let output = Command::new("gh")
+    let output = Command::new(gh())
         .current_dir(worktree)
         .args(["pr", "create", "--title", title, "--body", "", "--fill"])
         .output()
@@ -123,7 +124,7 @@ pub fn create_pr(worktree: &Path, title: &str) -> Result<String, String> {
 }
 
 pub fn merge_pr_rebase(worktree: &Path) -> Result<(), String> {
-    let output = Command::new("gh")
+    let output = Command::new(gh())
         .current_dir(worktree)
         .args(["pr", "merge", "--rebase"])
         .output()
@@ -141,7 +142,7 @@ pub fn merge_pr_rebase(worktree: &Path) -> Result<(), String> {
     // checked out in the main worktree, so `gh --delete-branch` would fail.
     let branch = get_branch_name(worktree).unwrap_or_default();
     if !branch.is_empty() {
-        let _ = Command::new("git")
+        let _ = Command::new(git())
             .arg("-C")
             .arg(worktree)
             .args(["push", "origin", "--delete", &branch])

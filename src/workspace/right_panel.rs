@@ -299,7 +299,7 @@ impl WorkspaceView {
     fn render_commit_input(&self, message: &str, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
         let display_text = if message.is_empty() {
-            "wip".to_string()
+            "Enter commit message...".to_string()
         } else {
             message.to_string()
         };

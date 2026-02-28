@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
+use super::{gh, git};
 use crate::state::{BranchStatus, GitChange};
 
 pub fn collect_changes(repo_root: &Path) -> Result<Vec<GitChange>, String> {
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(repo_root)
         .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
@@ -82,7 +83,7 @@ fn collect_numstat(repo_root: &Path) -> HashMap<String, (Option<u32>, Option<u32
     let mut map = HashMap::new();
 
     for extra_args in [&["diff", "--numstat", "-z"][..], &["diff", "--cached", "--numstat", "-z"]] {
-        if let Ok(output) = Command::new("git")
+        if let Ok(output) = Command::new(git())
             .arg("-C")
             .arg(repo_root)
             .args(extra_args)
@@ -148,7 +149,7 @@ fn count_file_lines(repo_root: &Path, relative_path: &str) -> Option<u32> {
 
 pub fn commits_ahead_of_main(worktree: &Path) -> Result<u32, String> {
     // Detect default branch
-    let default_branch = Command::new("git")
+    let default_branch = Command::new(git())
         .arg("-C")
         .arg(worktree)
         .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
@@ -161,7 +162,7 @@ pub fn commits_ahead_of_main(worktree: &Path) -> Result<u32, String> {
         })
         .unwrap_or_else(|| "origin/main".to_string());
 
-    let output = Command::new("git")
+    let output = Command::new(git())
         .arg("-C")
         .arg(worktree)
         .args(["rev-list", "--count", &format!("{default_branch}..HEAD")])
@@ -179,7 +180,7 @@ pub fn commits_ahead_of_main(worktree: &Path) -> Result<u32, String> {
 }
 
 pub fn check_pr_status(worktree: &Path) -> Result<Option<(String, bool)>, String> {
-    let output = Command::new("gh")
+    let output = Command::new(gh())
         .current_dir(worktree)
         .args(["pr", "view", "--json", "url,state"])
         .output()

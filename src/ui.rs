@@ -2,13 +2,15 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, Context, Div, MouseButton, MouseUpEvent, StatefulInteractiveElement, Window, div,
-    prelude::*, px,
+    AnyElement, Context, Div, MouseButton, MouseUpEvent, Window, div, prelude::*, px,
 };
 
 use crate::git;
 use crate::picker;
-use crate::state::{AppConfig, AppState, GitChange, ProjectRuntime, SavedProject, TerminalPair};
+use crate::state::{
+    AppConfig, AppState, GitChange, ProjectRuntime, SavedProject, SavedSession, SessionRuntime,
+    TerminalPair,
+};
 use crate::storage;
 use crate::terminal;
 
@@ -25,10 +27,16 @@ impl WorkspaceView {
         refresh_project_validity(&mut state.config.projects);
 
         state.selected_repo = pick_initial_selection(&state.config);
+        state.selected_session = state
+            .selected_repo
+            .as_ref()
+            .and_then(|repo| pick_initial_session(&state.config, repo));
 
         let mut this = Self { state };
         if let Some(repo) = this.state.selected_repo.clone() {
-            this.activate_project(repo, window, cx);
+            if let Some(session_id) = this.state.selected_session.clone() {
+                this.activate_session(repo, session_id, window, cx);
+            }
         }
 
         this
@@ -63,6 +71,11 @@ impl WorkspaceView {
 
         if removed_selected {
             self.state.selected_repo = pick_initial_selection(&self.state.config);
+            self.state.selected_session = self
+                .state
+                .selected_repo
+                .as_ref()
+                .and_then(|repo| pick_initial_session(&self.state.config, repo));
             self.state.git_poll_generation = self.state.git_poll_generation.wrapping_add(1);
         }
 
@@ -77,7 +90,95 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.activate_project(repo_root, window, cx);
+        let session_id = pick_initial_session(&self.state.config, &repo_root);
+        if let Some(session_id) = session_id {
+            self.activate_session(repo_root, session_id, window, cx);
+        }
+    }
+
+    fn on_select_session(
+        &mut self,
+        repo_root: PathBuf,
+        session_id: String,
+        _event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.activate_session(repo_root, session_id, window, cx);
+    }
+
+    fn on_add_session(
+        &mut self,
+        repo_root: PathBuf,
+        _event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        else {
+            return;
+        };
+
+        let new_id = project.next_session_id();
+        let new_name = project.next_session_name();
+        project.sessions.push(SavedSession {
+            id: new_id.clone(),
+            name: new_name,
+        });
+
+        self.activate_session(repo_root, new_id, window, cx);
+    }
+
+    fn on_delete_session(
+        &mut self,
+        repo_root: PathBuf,
+        session_id: String,
+        _event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(runtime) = self.state.runtimes.get_mut(&repo_root) {
+            runtime.session_runtimes.remove(&session_id);
+        }
+
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        {
+            project.sessions.retain(|s| s.id != session_id);
+        }
+
+        let was_selected = self
+            .state
+            .selected_repo
+            .as_ref()
+            .is_some_and(|r| r == &repo_root)
+            && self
+                .state
+                .selected_session
+                .as_ref()
+                .is_some_and(|s| s == &session_id);
+
+        if was_selected {
+            let new_session = pick_initial_session(&self.state.config, &repo_root);
+            if let Some(new_session) = new_session {
+                self.activate_session(repo_root, new_session, window, cx);
+                return;
+            } else {
+                self.state.selected_session = None;
+            }
+        }
+
+        self.persist_config();
+        cx.notify();
     }
 
     fn add_project_from_path(
@@ -96,15 +197,16 @@ impl WorkspaceView {
                     .find(|project| project.repo_root == repo_root)
                     .map(|project| project.repo_root.clone())
                 {
-                    self.activate_project(existing, window, cx);
+                    let session_id = pick_initial_session(&self.state.config, &existing)
+                        .unwrap_or_else(|| "1".to_string());
+                    self.activate_session(existing, session_id, window, cx);
                     return;
                 }
 
-                self.state
-                    .config
-                    .projects
-                    .push(SavedProject::from_repo_root(repo_root.clone()));
-                self.activate_project(repo_root, window, cx);
+                let project = SavedProject::from_repo_root(repo_root.clone());
+                let session_id = project.sessions[0].id.clone();
+                self.state.config.projects.push(project);
+                self.activate_session(repo_root, session_id, window, cx);
             }
             Err(error) => {
                 self.state.flash_error = Some(error);
@@ -113,37 +215,68 @@ impl WorkspaceView {
         }
     }
 
-    fn activate_project(
+    fn activate_session(
         &mut self,
         repo_root: PathBuf,
+        session_id: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.state.selected_repo = Some(repo_root.clone());
-        self.ensure_runtime(&repo_root, window, cx);
+        self.state.selected_session = Some(session_id.clone());
+        self.ensure_session_runtime(&repo_root, &session_id, window, cx);
         self.state.config.last_selected_repo = Some(repo_root.clone());
+
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        {
+            project.last_selected_session = Some(session_id);
+        }
+
         self.persist_config();
         self.start_git_poll(repo_root, window, cx);
         cx.notify();
     }
 
-    fn ensure_runtime(&mut self, repo_root: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        if self.state.runtimes.contains_key(repo_root) {
-            return;
+    fn ensure_session_runtime(
+        &mut self,
+        repo_root: &Path,
+        session_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(runtime) = self.state.runtimes.get(repo_root) {
+            if runtime.session_runtimes.contains_key(session_id) {
+                return;
+            }
         }
 
-        let terminal_state = match (
+        let session_runtime = match (
             terminal::spawn_terminal(window, cx, repo_root),
             terminal::spawn_terminal(window, cx, repo_root),
         ) {
-            (Ok(main), Ok(side)) => (Some(TerminalPair { main, side }), None),
-            (Err(error), _) | (_, Err(error)) => (None, Some(error.to_string())),
+            (Ok(main), Ok(side)) => SessionRuntime {
+                terminals: Some(TerminalPair { main, side }),
+                terminal_error: None,
+            },
+            (Err(error), _) | (_, Err(error)) => SessionRuntime {
+                terminals: None,
+                terminal_error: Some(error.to_string()),
+            },
         };
 
-        let mut runtime = ProjectRuntime::default();
-        runtime.terminals = terminal_state.0;
-        runtime.terminal_error = terminal_state.1;
-        self.state.runtimes.insert(repo_root.to_path_buf(), runtime);
+        let runtime = self
+            .state
+            .runtimes
+            .entry(repo_root.to_path_buf())
+            .or_default();
+        runtime
+            .session_runtimes
+            .insert(session_id.to_string(), session_runtime);
     }
 
     fn start_git_poll(&mut self, repo_root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -194,9 +327,16 @@ impl WorkspaceView {
         }
     }
 
-    fn selected_runtime(&self) -> Option<&ProjectRuntime> {
+    fn selected_project_runtime(&self) -> Option<&ProjectRuntime> {
         let repo = self.state.selected_repo.as_ref()?;
         self.state.runtimes.get(repo)
+    }
+
+    fn selected_session_runtime(&self) -> Option<&SessionRuntime> {
+        let repo = self.state.selected_repo.as_ref()?;
+        let session_id = self.state.selected_session.as_ref()?;
+        let project_runtime = self.state.runtimes.get(repo)?;
+        project_runtime.session_runtimes.get(session_id)
     }
 
     fn flash_banner(&self) -> Option<AnyElement> {
@@ -213,7 +353,8 @@ impl WorkspaceView {
     }
 
     fn render_left_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let selected = self.state.selected_repo.as_ref();
+        let selected_repo = self.state.selected_repo.as_ref();
+        let selected_session = self.state.selected_session.as_ref();
 
         div()
             .w(px(240.))
@@ -246,89 +387,220 @@ impl WorkspaceView {
                     .min_h_0()
                     .overflow_scroll()
                     .children(self.state.config.projects.iter().map(|project| {
-                        let is_selected = selected.is_some_and(|value| value == &project.repo_root);
-                        let repo_root = project.repo_root.clone();
+                        let is_project_selected =
+                            selected_repo.is_some_and(|v| v == &project.repo_root);
+                        let select_repo = project.repo_root.clone();
                         let remove_repo = project.repo_root.clone();
 
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap_2()
-                            .px_3()
-                            .py_2()
-                            .border_b_1()
-                            .border_color(gpui::rgb(0x18212f))
-                            .bg(if is_selected {
-                                gpui::rgba(0x1d4ed838)
-                            } else {
-                                gpui::rgba(0x00000000)
-                            })
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .when(project.last_known_valid, |row| {
-                                        row.cursor_pointer().on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, event, window, cx| {
-                                                this.on_select_project(
-                                                    repo_root.clone(),
-                                                    event,
-                                                    window,
-                                                    cx,
-                                                )
-                                            }),
+                        let mut container = div().flex().flex_col().border_b_1().border_color(
+                            gpui::rgb(0x18212f),
+                        );
+
+                        // Project header row
+                        container = container.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .gap_2()
+                                .px_3()
+                                .py_2()
+                                .bg(if is_project_selected {
+                                    gpui::rgba(0x1d4ed820)
+                                } else {
+                                    gpui::rgba(0x00000000)
+                                })
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .when(project.last_known_valid, |row| {
+                                            row.cursor_pointer().on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(move |this, event, window, cx| {
+                                                    this.on_select_project(
+                                                        select_repo.clone(),
+                                                        event,
+                                                        window,
+                                                        cx,
+                                                    )
+                                                }),
+                                            )
+                                        })
+                                        .child(
+                                            div()
+                                                .text_color(if project.last_known_valid {
+                                                    gpui::rgb(0xffffff)
+                                                } else {
+                                                    gpui::rgb(0x94a3b8)
+                                                })
+                                                .child(project.display_name.clone()),
                                         )
-                                    })
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(gpui::rgb(0x64748b))
+                                                .child(if project.last_known_valid {
+                                                    project.repo_root.display().to_string()
+                                                } else {
+                                                    format!(
+                                                        "Missing: {}",
+                                                        project.repo_root.display()
+                                                    )
+                                                }),
+                                        ),
+                                )
+                                .child(button().px_2().child("x").on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, event, window, cx| {
+                                        this.on_remove_project(
+                                            remove_repo.clone(),
+                                            event,
+                                            window,
+                                            cx,
+                                        )
+                                    }),
+                                )),
+                        );
+
+                        // Session rows (only for valid projects)
+                        if project.last_known_valid {
+                            for session in &project.sessions {
+                                let session_repo = project.repo_root.clone();
+                                let session_id = session.id.clone();
+                                let delete_repo = project.repo_root.clone();
+                                let delete_session_id = session.id.clone();
+                                let is_session_selected = is_project_selected
+                                    && selected_session.is_some_and(|s| s == &session.id);
+
+                                container = container.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .pl(px(28.))
+                                        .pr_3()
+                                        .py_1()
+                                        .bg(if is_session_selected {
+                                            gpui::rgba(0x1d4ed838)
+                                        } else {
+                                            gpui::rgba(0x00000000)
+                                        })
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .cursor_pointer()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |this, event, window, cx| {
+                                                            this.on_select_session(
+                                                                session_repo.clone(),
+                                                                session_id.clone(),
+                                                                event,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_sm()
+                                                        .text_color(if is_session_selected {
+                                                            gpui::rgb(0x93c5fd)
+                                                        } else {
+                                                            gpui::rgb(0xcbd5e1)
+                                                        })
+                                                        .child(session.name.clone()),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .cursor_pointer()
+                                                .px_1()
+                                                .text_xs()
+                                                .text_color(gpui::rgb(0x64748b))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |this, event, window, cx| {
+                                                            this.on_delete_session(
+                                                                delete_repo.clone(),
+                                                                delete_session_id.clone(),
+                                                                event,
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    ),
+                                                )
+                                                .child("x"),
+                                        ),
+                                );
+                            }
+
+                            // "+ New Session" button
+                            let add_session_repo = project.repo_root.clone();
+                            container = container.child(
+                                div()
+                                    .pl(px(28.))
+                                    .pr_3()
+                                    .py_1()
+                                    .cursor_pointer()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, event, window, cx| {
+                                            this.on_add_session(
+                                                add_session_repo.clone(),
+                                                event,
+                                                window,
+                                                cx,
+                                            )
+                                        }),
+                                    )
                                     .child(
                                         div()
-                                            .text_color(if project.last_known_valid {
-                                                gpui::rgb(0xffffff)
-                                            } else {
-                                                gpui::rgb(0x94a3b8)
-                                            })
-                                            .child(project.display_name.clone()),
-                                    )
-                                    .child(div().text_xs().text_color(gpui::rgb(0x64748b)).child(
-                                        if project.last_known_valid {
-                                            project.repo_root.display().to_string()
-                                        } else {
-                                            format!("Missing: {}", project.repo_root.display())
-                                        },
-                                    )),
-                            )
-                            .child(button().px_2().child("x").on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |this, event, window, cx| {
-                                    this.on_remove_project(remove_repo.clone(), event, window, cx)
-                                }),
-                            ))
+                                            .text_xs()
+                                            .text_color(gpui::rgb(0x64748b))
+                                            .child("+ New Session"),
+                                    ),
+                            );
+                        }
+
+                        container
                     })),
             )
             .into_any_element()
     }
 
     fn render_center(&self) -> AnyElement {
-        let Some(selected_repo) = self.state.selected_repo.as_ref() else {
+        if self.state.selected_repo.is_none() {
             return self
                 .empty_card("Add a Git repository from the left sidebar.")
                 .into_any_element();
-        };
+        }
 
-        let Some(runtime) = self.selected_runtime() else {
+        if self.state.selected_session.is_none() {
             return self
-                .empty_card("Loading project runtime...")
+                .empty_card("No sessions. Create one from the sidebar.")
+                .into_any_element();
+        }
+
+        let Some(session_runtime) = self.selected_session_runtime() else {
+            return self
+                .empty_card("Loading session...")
                 .into_any_element();
         };
 
-        if let Some(error) = &runtime.terminal_error {
+        if let Some(error) = &session_runtime.terminal_error {
             return self
                 .empty_card(&format!("Terminal failed to start: {error}"))
                 .into_any_element();
         }
 
-        if let Some(terminals) = &runtime.terminals {
+        if let Some(terminals) = &session_runtime.terminals {
             return div()
                 .flex_1()
                 .min_w_0()
@@ -338,7 +610,7 @@ impl WorkspaceView {
                 .into_any_element();
         }
 
-        self.empty_card(&format!("Opening {}", selected_repo.display()))
+        self.empty_card("Starting terminal...")
             .into_any_element()
     }
 
@@ -360,7 +632,9 @@ impl WorkspaceView {
     }
 
     fn render_changes_panel(&self) -> AnyElement {
-        let snapshot = self.selected_runtime().map(|runtime| &runtime.git_snapshot);
+        let snapshot = self
+            .selected_project_runtime()
+            .map(|runtime| &runtime.git_snapshot);
         let changes = snapshot
             .map(|snapshot| snapshot.changes.as_slice())
             .unwrap_or(&[]);
@@ -447,19 +721,19 @@ impl WorkspaceView {
     }
 
     fn render_side_terminal(&self) -> AnyElement {
-        let Some(runtime) = self.selected_runtime() else {
+        let Some(session_runtime) = self.selected_session_runtime() else {
             return self
-                .empty_card("Select a project to start the side terminal.")
+                .empty_card("Select a session to start the side terminal.")
                 .into_any_element();
         };
 
-        if let Some(error) = &runtime.terminal_error {
+        if let Some(error) = &session_runtime.terminal_error {
             return self
                 .empty_card(&format!("Terminal failed to start: {error}"))
                 .into_any_element();
         }
 
-        if let Some(terminals) = &runtime.terminals {
+        if let Some(terminals) = &session_runtime.terminals {
             return div()
                 .flex_1()
                 .min_h_0()
@@ -556,4 +830,14 @@ fn pick_initial_selection(config: &AppConfig) -> Option<PathBuf> {
         .iter()
         .find(|project| project.last_known_valid)
         .map(|project| project.repo_root.clone())
+}
+
+fn pick_initial_session(config: &AppConfig, repo: &Path) -> Option<String> {
+    let project = config.projects.iter().find(|p| p.repo_root == repo)?;
+    if let Some(last) = &project.last_selected_session {
+        if project.sessions.iter().any(|s| s.id == *last) {
+            return Some(last.clone());
+        }
+    }
+    project.sessions.first().map(|s| s.id.clone())
 }

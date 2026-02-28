@@ -6,10 +6,18 @@ use gpui::Entity;
 use gpui_terminal::TerminalView;
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct SavedSession {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SavedProject {
     pub repo_root: PathBuf,
     pub display_name: String,
     pub last_known_valid: bool,
+    pub sessions: Vec<SavedSession>,
+    pub last_selected_session: Option<String>,
 }
 
 impl SavedProject {
@@ -25,7 +33,36 @@ impl SavedProject {
             repo_root,
             display_name,
             last_known_valid: true,
+            sessions: vec![SavedSession {
+                id: "1".to_string(),
+                name: "Session 1".to_string(),
+            }],
+            last_selected_session: Some("1".to_string()),
         }
+    }
+
+    pub fn next_session_id(&self) -> String {
+        let max_id = self
+            .sessions
+            .iter()
+            .filter_map(|s| s.id.parse::<u64>().ok())
+            .max()
+            .unwrap_or(0);
+        (max_id + 1).to_string()
+    }
+
+    pub fn next_session_name(&self) -> String {
+        let max_num = self
+            .sessions
+            .iter()
+            .filter_map(|s| {
+                s.name
+                    .strip_prefix("Session ")
+                    .and_then(|n| n.parse::<u64>().ok())
+            })
+            .max()
+            .unwrap_or(0);
+        format!("Session {}", max_num + 1)
     }
 }
 
@@ -54,17 +91,29 @@ pub struct TerminalPair {
     pub side: Entity<TerminalView>,
 }
 
-pub struct ProjectRuntime {
+pub struct SessionRuntime {
     pub terminals: Option<TerminalPair>,
     pub terminal_error: Option<String>,
+}
+
+impl Default for SessionRuntime {
+    fn default() -> Self {
+        Self {
+            terminals: None,
+            terminal_error: None,
+        }
+    }
+}
+
+pub struct ProjectRuntime {
+    pub session_runtimes: HashMap<String, SessionRuntime>,
     pub git_snapshot: GitSnapshot,
 }
 
 impl Default for ProjectRuntime {
     fn default() -> Self {
         Self {
-            terminals: None,
-            terminal_error: None,
+            session_runtimes: HashMap::new(),
             git_snapshot: GitSnapshot::default(),
         }
     }
@@ -74,6 +123,7 @@ impl Default for ProjectRuntime {
 pub struct AppState {
     pub config: AppConfig,
     pub selected_repo: Option<PathBuf>,
+    pub selected_session: Option<String>,
     pub runtimes: HashMap<PathBuf, ProjectRuntime>,
     pub flash_error: Option<String>,
     pub git_poll_generation: u64,

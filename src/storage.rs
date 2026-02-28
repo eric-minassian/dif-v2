@@ -4,13 +4,22 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 
-use crate::state::{AppConfig, SavedProject};
+use crate::state::{AppConfig, SavedProject, SavedSession};
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+struct RawSavedSession {
+    id: Option<String>,
+    name: Option<String>,
+}
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 struct RawSavedProject {
     repo_root: Option<PathBuf>,
     display_name: Option<String>,
     last_known_valid: Option<bool>,
+    #[serde(default)]
+    sessions: Vec<RawSavedSession>,
+    last_selected_session: Option<String>,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -47,10 +56,35 @@ pub fn load_config() -> Result<AppConfig> {
                     .to_string()
             });
 
+            let sessions: Vec<SavedSession> = item
+                .sessions
+                .into_iter()
+                .filter_map(|s| {
+                    Some(SavedSession {
+                        id: s.id?,
+                        name: s.name.unwrap_or_else(|| "Session".to_string()),
+                    })
+                })
+                .collect();
+
+            let (sessions, last_selected_session) = if sessions.is_empty() {
+                (
+                    vec![SavedSession {
+                        id: "1".to_string(),
+                        name: "Session 1".to_string(),
+                    }],
+                    Some("1".to_string()),
+                )
+            } else {
+                (sessions, item.last_selected_session)
+            };
+
             Some(SavedProject {
                 repo_root,
                 display_name,
                 last_known_valid: item.last_known_valid.unwrap_or(true),
+                sessions,
+                last_selected_session,
             })
         })
         .collect();
@@ -81,8 +115,8 @@ fn config_path() -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{RawAppConfig, RawSavedProject};
-    use crate::state::{AppConfig, SavedProject};
+    use super::{RawAppConfig, RawSavedProject, RawSavedSession};
+    use crate::state::{AppConfig, SavedProject, SavedSession};
     use std::path::PathBuf;
 
     #[test]
@@ -93,11 +127,18 @@ mod tests {
                     repo_root: Some(PathBuf::from("/tmp/one")),
                     display_name: Some("one".into()),
                     last_known_valid: Some(true),
+                    sessions: vec![RawSavedSession {
+                        id: Some("1".into()),
+                        name: Some("Session 1".into()),
+                    }],
+                    last_selected_session: Some("1".into()),
                 },
                 RawSavedProject {
                     repo_root: None,
                     display_name: Some("broken".into()),
                     last_known_valid: Some(false),
+                    sessions: vec![],
+                    last_selected_session: None,
                 },
             ],
             last_selected_repo: Some(PathBuf::from("/tmp/one")),
@@ -110,10 +151,35 @@ mod tests {
                 .projects
                 .into_iter()
                 .filter_map(|item| {
+                    let sessions: Vec<SavedSession> = item
+                        .sessions
+                        .into_iter()
+                        .filter_map(|s| {
+                            Some(SavedSession {
+                                id: s.id?,
+                                name: s.name.unwrap_or_default(),
+                            })
+                        })
+                        .collect();
+
+                    let (sessions, last_selected_session) = if sessions.is_empty() {
+                        (
+                            vec![SavedSession {
+                                id: "1".to_string(),
+                                name: "Session 1".to_string(),
+                            }],
+                            Some("1".to_string()),
+                        )
+                    } else {
+                        (sessions, item.last_selected_session)
+                    };
+
                     Some(SavedProject {
                         repo_root: item.repo_root?,
                         display_name: item.display_name.unwrap_or_default(),
                         last_known_valid: item.last_known_valid.unwrap_or(true),
+                        sessions,
+                        last_selected_session,
                     })
                 })
                 .collect(),
@@ -122,5 +188,72 @@ mod tests {
 
         assert_eq!(config.projects.len(), 1);
         assert_eq!(config.projects[0].display_name, "one");
+        assert_eq!(config.projects[0].sessions.len(), 1);
+        assert_eq!(config.projects[0].sessions[0].name, "Session 1");
+    }
+
+    #[test]
+    fn creates_default_session_for_old_config() {
+        let raw = RawAppConfig {
+            projects: vec![RawSavedProject {
+                repo_root: Some(PathBuf::from("/tmp/old-project")),
+                display_name: Some("old-project".into()),
+                last_known_valid: Some(true),
+                sessions: vec![],
+                last_selected_session: None,
+            }],
+            last_selected_repo: None,
+        };
+
+        let json = serde_json::to_string(&raw).unwrap();
+        let parsed: RawAppConfig = serde_json::from_str(&json).unwrap();
+        let config = AppConfig {
+            projects: parsed
+                .projects
+                .into_iter()
+                .filter_map(|item| {
+                    let sessions: Vec<SavedSession> = item
+                        .sessions
+                        .into_iter()
+                        .filter_map(|s| {
+                            Some(SavedSession {
+                                id: s.id?,
+                                name: s.name.unwrap_or_default(),
+                            })
+                        })
+                        .collect();
+
+                    let (sessions, last_selected_session) = if sessions.is_empty() {
+                        (
+                            vec![SavedSession {
+                                id: "1".to_string(),
+                                name: "Session 1".to_string(),
+                            }],
+                            Some("1".to_string()),
+                        )
+                    } else {
+                        (sessions, item.last_selected_session)
+                    };
+
+                    Some(SavedProject {
+                        repo_root: item.repo_root?,
+                        display_name: item.display_name.unwrap_or_default(),
+                        last_known_valid: item.last_known_valid.unwrap_or(true),
+                        sessions,
+                        last_selected_session,
+                    })
+                })
+                .collect(),
+            last_selected_repo: parsed.last_selected_repo,
+        };
+
+        assert_eq!(config.projects.len(), 1);
+        assert_eq!(config.projects[0].sessions.len(), 1);
+        assert_eq!(config.projects[0].sessions[0].id, "1");
+        assert_eq!(config.projects[0].sessions[0].name, "Session 1");
+        assert_eq!(
+            config.projects[0].last_selected_session,
+            Some("1".to_string())
+        );
     }
 }

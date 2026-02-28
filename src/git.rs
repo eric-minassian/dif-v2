@@ -4,7 +4,7 @@ use std::process::Command;
 
 use similar::TextDiff;
 
-use crate::state::{DiffData, GitChange, SplitLine, SplitLineKind};
+use crate::state::{BranchStatus, DiffData, GitChange, SplitLine, SplitLineKind};
 
 pub fn normalize_repo_path(path: &Path) -> Result<PathBuf, String> {
     let expanded = expand_tilde(path);
@@ -417,6 +417,275 @@ pub fn create_worktree(
     }
 
     Ok(worktree_path)
+}
+
+pub fn get_branch_name(worktree: &Path) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .map_err(|e| format!("failed to get branch name: {e}"))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+pub fn commit_all(worktree: &Path, message: &str) -> Result<(), String> {
+    // Stage everything
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["add", "-A"])
+        .output()
+        .map_err(|e| format!("git add failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git add failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    // Commit
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["commit", "-m", message])
+        .output()
+        .map_err(|e| format!("git commit failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn push(worktree: &Path) -> Result<(), String> {
+    let branch = get_branch_name(worktree)?;
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["push", "-u", "origin", &branch])
+        .output()
+        .map_err(|e| format!("git push failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git push failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn create_pr(worktree: &Path, title: &str) -> Result<String, String> {
+    let output = Command::new("gh")
+        .current_dir(worktree)
+        .args(["pr", "create", "--title", title, "--body", "", "--fill"])
+        .output()
+        .map_err(|e| format!("gh pr create failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "gh pr create failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+pub fn merge_pr_rebase(worktree: &Path) -> Result<(), String> {
+    let output = Command::new("gh")
+        .current_dir(worktree)
+        .args(["pr", "merge", "--rebase"])
+        .output()
+        .map_err(|e| format!("gh pr merge failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "gh pr merge failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    // Delete the remote branch separately — we skip local branch deletion
+    // because the branch is checked out in this worktree and `main` is
+    // checked out in the main worktree, so `gh --delete-branch` would fail.
+    let branch = get_branch_name(worktree).unwrap_or_default();
+    if !branch.is_empty() {
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(worktree)
+            .args(["push", "origin", "--delete", &branch])
+            .output();
+    }
+
+    Ok(())
+}
+
+pub fn commits_ahead_of_main(worktree: &Path) -> Result<u32, String> {
+    // Detect default branch
+    let default_branch = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s.is_empty() { None } else { Some(s) }
+        })
+        .unwrap_or_else(|| "origin/main".to_string());
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["rev-list", "--count", &format!("{default_branch}..HEAD")])
+        .output()
+        .map_err(|e| format!("git rev-list failed: {e}"))?;
+
+    if !output.status.success() {
+        return Ok(0);
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u32>()
+        .unwrap_or(0))
+}
+
+pub fn check_pr_status(worktree: &Path) -> Result<Option<(String, bool)>, String> {
+    let output = Command::new("gh")
+        .current_dir(worktree)
+        .args(["pr", "view", "--json", "url,state"])
+        .output()
+        .map_err(|e| format!("gh pr view failed: {e}"))?;
+
+    if !output.status.success() {
+        // No PR exists for this branch
+        return Ok(None);
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(text.trim()).map_err(|e| format!("failed to parse gh output: {e}"))?;
+
+    let url = parsed["url"].as_str().unwrap_or_default().to_string();
+    let state = parsed["state"].as_str().unwrap_or_default();
+    let merged = state == "MERGED";
+
+    if url.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some((url, merged)))
+}
+
+pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
+    let commits_ahead = commits_ahead_of_main(worktree).unwrap_or(0);
+    let (pr_url, pr_merged) = match check_pr_status(worktree) {
+        Ok(Some((url, merged))) => (Some(url), merged),
+        _ => (None, false),
+    };
+    BranchStatus {
+        commits_ahead,
+        pr_url,
+        pr_merged,
+    }
+}
+
+pub fn commit_selected(worktree: &Path, files: &[String], message: &str) -> Result<(), String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(worktree).arg("add").arg("--");
+    for file in files {
+        cmd.arg(file);
+    }
+    let output = cmd.output().map_err(|e| format!("git add failed: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git add failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["commit", "-m", message])
+        .output()
+        .map_err(|e| format!("git commit failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn amend_selected(worktree: &Path, files: &[String]) -> Result<(), String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(worktree).arg("add").arg("--");
+    for file in files {
+        cmd.arg(file);
+    }
+    let output = cmd.output().map_err(|e| format!("git add failed: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git add failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["commit", "--amend", "--no-edit"])
+        .output()
+        .map_err(|e| format!("git commit --amend failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git commit --amend failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn force_push(worktree: &Path) -> Result<(), String> {
+    let branch = get_branch_name(worktree)?;
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["push", "--force-with-lease", "-u", "origin", &branch])
+        .output()
+        .map_err(|e| format!("git push failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git push failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(())
 }
 
 pub fn remove_worktree(repo_root: &Path, worktree_path: &Path) {

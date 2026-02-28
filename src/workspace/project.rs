@@ -115,6 +115,7 @@ impl WorkspaceView {
 
                 match git::create_worktree(&repo_root, &project.display_name, &session_id) {
                     Ok(wt_path) => {
+                        self.run_init_commands(&repo_root, &wt_path);
                         project.sessions[0].worktree_path = Some(wt_path);
                     }
                     Err(error) => {

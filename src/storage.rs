@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 
-use crate::state::{AppConfig, SavedProject, SavedSession};
+use crate::state::{AppConfig, ProjectSettings, SavedProject, SavedSession};
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 struct RawSavedSession {
@@ -15,6 +15,12 @@ struct RawSavedSession {
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
+struct RawProjectSettings {
+    #[serde(default)]
+    workspace_init_commands: Option<Vec<String>>,
+}
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
 struct RawSavedProject {
     repo_root: Option<PathBuf>,
     display_name: Option<String>,
@@ -22,6 +28,8 @@ struct RawSavedProject {
     #[serde(default)]
     sessions: Vec<RawSavedSession>,
     last_selected_session: Option<String>,
+    #[serde(default)]
+    settings: Option<RawProjectSettings>,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -87,12 +95,20 @@ pub fn load_config() -> Result<AppConfig> {
                 (sessions, item.last_selected_session)
             };
 
+            let settings = item
+                .settings
+                .map(|raw| ProjectSettings {
+                    workspace_init_commands: raw.workspace_init_commands.unwrap_or_default(),
+                })
+                .unwrap_or_default();
+
             Some(SavedProject {
                 repo_root,
                 display_name,
                 last_known_valid: item.last_known_valid.unwrap_or(true),
                 sessions,
                 last_selected_session,
+                settings,
             })
         })
         .collect();
@@ -126,7 +142,7 @@ fn config_path() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{RawAppConfig, RawSavedProject, RawSavedSession};
-    use crate::state::{AppConfig, SavedProject, SavedSession};
+    use crate::state::{AppConfig, ProjectSettings, SavedProject, SavedSession};
     use std::path::PathBuf;
 
     #[test]
@@ -194,6 +210,7 @@ mod tests {
                         last_known_valid: item.last_known_valid.unwrap_or(true),
                         sessions,
                         last_selected_session,
+                        settings: ProjectSettings::default(),
                     })
                 })
                 .collect(),
@@ -263,6 +280,7 @@ mod tests {
                         last_known_valid: item.last_known_valid.unwrap_or(true),
                         sessions,
                         last_selected_session,
+                        settings: ProjectSettings::default(),
                     })
                 })
                 .collect(),

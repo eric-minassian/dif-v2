@@ -123,15 +123,10 @@ pub fn create_pr(worktree: &Path, title: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub fn merge_pr_rebase(worktree: &Path, auto: bool) -> Result<(), String> {
-    let mut args = vec!["pr", "merge", "--rebase"];
-    if auto {
-        args.push("--auto");
-    }
-
+pub fn merge_pr_rebase(worktree: &Path) -> Result<(), String> {
     let output = Command::new(gh())
         .current_dir(worktree)
-        .args(&args)
+        .args(["pr", "merge", "--rebase"])
         .output()
         .map_err(|e| format!("gh pr merge failed: {e}"))?;
 
@@ -142,20 +137,50 @@ pub fn merge_pr_rebase(worktree: &Path, auto: bool) -> Result<(), String> {
         ));
     }
 
-    // When using --auto the merge is deferred until checks pass,
-    // so we must not delete the remote branch yet.
-    if !auto {
-        // Delete the remote branch separately — we skip local branch deletion
-        // because the branch is checked out in this worktree and `main` is
-        // checked out in the main worktree, so `gh --delete-branch` would fail.
-        let branch = get_branch_name(worktree).unwrap_or_default();
-        if !branch.is_empty() {
-            let _ = Command::new(git())
-                .arg("-C")
-                .arg(worktree)
-                .args(["push", "origin", "--delete", &branch])
-                .output();
-        }
+    // Delete the remote branch separately — we skip local branch deletion
+    // because the branch is checked out in this worktree and `main` is
+    // checked out in the main worktree, so `gh --delete-branch` would fail.
+    let branch = get_branch_name(worktree).unwrap_or_default();
+    if !branch.is_empty() {
+        let _ = Command::new(git())
+            .arg("-C")
+            .arg(worktree)
+            .args(["push", "origin", "--delete", &branch])
+            .output();
+    }
+
+    Ok(())
+}
+
+pub fn enable_auto_merge(worktree: &Path) -> Result<(), String> {
+    let output = Command::new(gh())
+        .current_dir(worktree)
+        .args(["pr", "merge", "--auto", "--rebase"])
+        .output()
+        .map_err(|e| format!("gh pr merge --auto failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "gh pr merge --auto failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn disable_auto_merge(worktree: &Path) -> Result<(), String> {
+    let output = Command::new(gh())
+        .current_dir(worktree)
+        .args(["pr", "merge", "--disable-auto"])
+        .output()
+        .map_err(|e| format!("gh pr merge --disable-auto failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "gh pr merge --disable-auto failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
 
     Ok(())

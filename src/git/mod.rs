@@ -44,9 +44,10 @@ fn gh() -> &'static Path {
 }
 
 pub use commands::{
-    amend_selected, commit_selected, create_pr, force_push, merge_pr_rebase, push,
+    amend_selected, commit_selected, create_pr, disable_auto_merge, enable_auto_merge, force_push,
+    merge_pr_rebase, push,
 };
 pub use diff::compute_file_diff;
 pub use repo::{get_branch_name, is_valid_repo, normalize_repo_path};
-pub use status::{collect_branch_status, collect_changes};
+pub use status::{check_repo_capabilities, collect_branch_status, collect_changes};
 pub use worktree::{create_worktree, remove_worktree};

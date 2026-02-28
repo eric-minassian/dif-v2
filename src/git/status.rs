@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::{gh, git};
-use crate::state::{BranchStatus, CheckBucket, CiCheck, GitChange};
+use crate::state::{BranchStatus, CheckBucket, CiCheck, GitChange, RepoCapabilities};
 
 pub fn collect_changes(repo_root: &Path) -> Result<Vec<GitChange>, String> {
     let output = Command::new(git())
@@ -184,12 +184,13 @@ pub struct PrInfo {
     pub merged: bool,
     pub number: Option<u32>,
     pub state: Option<String>,
+    pub auto_merge_enabled: bool,
 }
 
 pub fn check_pr_status(worktree: &Path) -> Result<Option<PrInfo>, String> {
     let output = Command::new(gh())
         .current_dir(worktree)
-        .args(["pr", "view", "--json", "url,state,number"])
+        .args(["pr", "view", "--json", "url,state,number,autoMergeRequest"])
         .output()
         .map_err(|e| format!("gh pr view failed: {e}"))?;
 
@@ -205,6 +206,7 @@ pub fn check_pr_status(worktree: &Path) -> Result<Option<PrInfo>, String> {
     let state = parsed["state"].as_str().unwrap_or_default().to_string();
     let merged = state == "MERGED";
     let number = parsed["number"].as_u64().map(|n| n as u32);
+    let auto_merge_enabled = !parsed["autoMergeRequest"].is_null();
 
     if url.is_empty() {
         return Ok(None);
@@ -215,7 +217,35 @@ pub fn check_pr_status(worktree: &Path) -> Result<Option<PrInfo>, String> {
         merged,
         number,
         state: Some(state),
+        auto_merge_enabled,
     }))
+}
+
+pub fn check_repo_capabilities(worktree: &Path) -> RepoCapabilities {
+    let output = match Command::new(gh())
+        .current_dir(worktree)
+        .args([
+            "api",
+            "repos/{owner}/{repo}",
+            "--jq",
+            "{allow_auto_merge,allow_rebase_merge}",
+        ])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return RepoCapabilities::default(),
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = match serde_json::from_str(text.trim()) {
+        Ok(v) => v,
+        Err(_) => return RepoCapabilities::default(),
+    };
+
+    RepoCapabilities {
+        auto_merge_allowed: parsed["allow_auto_merge"].as_bool().unwrap_or(false),
+        rebase_merge_allowed: parsed["allow_rebase_merge"].as_bool().unwrap_or(true),
+    }
 }
 
 pub fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
@@ -262,10 +292,17 @@ pub fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
 
 pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
     let commits_ahead = commits_ahead_of_main(worktree).unwrap_or(0);
-    let (pr_url, pr_merged, pr_number, pr_state) = match check_pr_status(worktree) {
-        Ok(Some(info)) => (Some(info.url), info.merged, info.number, info.state),
-        _ => (None, false, None, None),
-    };
+    let (pr_url, pr_merged, pr_number, pr_state, auto_merge_enabled) =
+        match check_pr_status(worktree) {
+            Ok(Some(info)) => (
+                Some(info.url),
+                info.merged,
+                info.number,
+                info.state,
+                info.auto_merge_enabled,
+            ),
+            _ => (None, false, None, None, false),
+        };
 
     let checks = if pr_url.is_some() {
         collect_pr_checks(worktree)
@@ -280,5 +317,6 @@ pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
         pr_number,
         pr_state,
         checks,
+        auto_merge_enabled,
     }
 }

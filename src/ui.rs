@@ -60,7 +60,7 @@ impl WorkspaceView {
             .and_then(|repo| pick_initial_session(&state.config, repo));
 
         let focus_handle = cx.focus_handle();
-        window.focus(&focus_handle);
+        focus_handle.focus(window, cx);
 
         let mut this = Self { state, focus_handle };
         if let Some(repo) = this.state.selected_repo.clone() {

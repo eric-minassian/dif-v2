@@ -5,6 +5,7 @@ mod picker;
 mod state;
 mod storage;
 mod terminal;
+mod terminal_view;
 mod theme;
 mod ui;
 

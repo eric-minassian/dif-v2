@@ -8,7 +8,7 @@ mod terminal;
 mod terminal_view;
 mod text_input;
 mod theme;
-mod ui;
+mod workspace;
 
 fn main() {
     app::run();

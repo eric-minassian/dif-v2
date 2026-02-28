@@ -10,6 +10,8 @@ use crate::state::{AppConfig, SavedProject, SavedSession};
 struct RawSavedSession {
     id: Option<String>,
     name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    worktree_path: Option<PathBuf>,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -67,7 +69,7 @@ pub fn load_config() -> Result<AppConfig> {
                     Some(SavedSession {
                         id: s.id?,
                         name: s.name.unwrap_or_else(|| "Session".to_string()),
-                        worktree_path: None,
+                        worktree_path: s.worktree_path,
                     })
                 })
                 .collect();
@@ -138,6 +140,7 @@ mod tests {
                     sessions: vec![RawSavedSession {
                         id: Some("1".into()),
                         name: Some("Session 1".into()),
+                        worktree_path: Some(PathBuf::from("/tmp/worktree-1")),
                     }],
                     last_selected_session: Some("1".into()),
                 },
@@ -167,7 +170,7 @@ mod tests {
                             Some(SavedSession {
                                 id: s.id?,
                                 name: s.name.unwrap_or_default(),
-                                worktree_path: None,
+                                worktree_path: s.worktree_path,
                             })
                         })
                         .collect();
@@ -202,6 +205,10 @@ mod tests {
         assert_eq!(config.projects[0].display_name, "one");
         assert_eq!(config.projects[0].sessions.len(), 1);
         assert_eq!(config.projects[0].sessions[0].name, "Session 1");
+        assert_eq!(
+            config.projects[0].sessions[0].worktree_path,
+            Some(PathBuf::from("/tmp/worktree-1"))
+        );
     }
 
     #[test]
@@ -232,7 +239,7 @@ mod tests {
                             Some(SavedSession {
                                 id: s.id?,
                                 name: s.name.unwrap_or_default(),
-                                worktree_path: None,
+                                worktree_path: s.worktree_path,
                             })
                         })
                         .collect();

@@ -1,2 +1,5 @@
+[build]
+target-dir = "/Users/eric/.cargo-targets/dif"
+
 [env]
 ZIG = "/opt/homebrew/opt/zig@0.14/bin/zig"

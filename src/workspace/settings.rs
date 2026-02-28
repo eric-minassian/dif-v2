@@ -30,6 +30,24 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    pub(crate) fn on_toggle_auto_merge(
+        &mut self,
+        repo_root: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        {
+            project.settings.auto_merge = !project.settings.auto_merge;
+        }
+        self.persist_config();
+        cx.notify();
+    }
+
     pub(crate) fn on_open_settings(&mut self, cx: &mut Context<Self>) {
         self.state.viewing_settings = true;
         cx.notify();
@@ -351,6 +369,60 @@ impl WorkspaceView {
                                     MouseButton::Left,
                                     cx.listener(move |this, _event, _window, cx| {
                                         this.on_toggle_conventional_commits(toggle_repo.clone(), cx);
+                                    }),
+                                )
+                                .child(if is_enabled { "On" } else { "Off" }),
+                        ),
+                );
+            }
+
+            // Auto merge toggle
+            {
+                let toggle_repo = repo_root.clone();
+                let is_enabled = project.settings.auto_merge;
+                let toggle_id = gpui::ElementId::Name(
+                    format!("am-toggle-{}", project.display_name).into(),
+                );
+                project_section = project_section.child(
+                    div()
+                        .mt_2()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_0p5()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_secondary)
+                                        .child("Auto merge"),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(t.text_dim)
+                                        .child("Enable auto-merge when PR checks are required"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id(toggle_id)
+                                .cursor_pointer()
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .text_xs()
+                                .bg(if is_enabled { t.accent_green } else { t.bg_surface })
+                                .text_color(if is_enabled { t.bg_panel } else { t.text_muted })
+                                .hover(|style| style.bg(t.bg_elevated_hover))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _event, _window, cx| {
+                                        this.on_toggle_auto_merge(toggle_repo.clone(), cx);
                                     }),
                                 )
                                 .child(if is_enabled { "On" } else { "Off" }),

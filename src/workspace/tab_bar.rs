@@ -62,6 +62,25 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    pub(crate) fn on_close_active_side_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.as_ref() else {
+            return;
+        };
+        let Some(session_id) = self.state.selected_session.as_ref() else {
+            return;
+        };
+        let Some(project_runtime) = self.state.runtimes.get(repo) else {
+            return;
+        };
+        let Some(session_runtime) = project_runtime.session_runtimes.get(session_id) else {
+            return;
+        };
+        let Some(tab_id) = session_runtime.selected_side_tab.clone() else {
+            return;
+        };
+        self.on_delete_side_tab(tab_id, cx);
+    }
+
     pub(crate) fn on_delete_side_tab(&mut self, tab_id: String, cx: &mut Context<Self>) {
         let Some(repo) = self.state.selected_repo.as_ref() else {
             return;

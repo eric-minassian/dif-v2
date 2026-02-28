@@ -34,6 +34,7 @@ actions!(
     workspace,
     [
         NewSideTab,
+        CloseSideTab,
         SelectSideTab1,
         SelectSideTab2,
         SelectSideTab3,
@@ -47,6 +48,11 @@ actions!(
         ToggleLeftSidebar,
         ToggleRightSidebar,
         RefreshGitStatus,
+        Quit,
+        HideApp,
+        HideOtherApps,
+        MinimizeWindow,
+        ZoomWindow,
     ]
 );
 
@@ -306,6 +312,15 @@ impl Render for WorkspaceView {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|this, _: &NewSideTab, window, cx| {
                 this.on_add_side_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CloseSideTab, _window, cx| {
+                this.on_close_active_side_tab(cx);
+            }))
+            .on_action(cx.listener(|_this, _: &MinimizeWindow, window, _cx| {
+                window.minimize_window();
+            }))
+            .on_action(cx.listener(|_this, _: &ZoomWindow, window, _cx| {
+                window.zoom_window();
             }))
             .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
                 if this.state.viewing_settings {

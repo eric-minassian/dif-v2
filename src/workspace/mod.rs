@@ -9,6 +9,7 @@ mod settings;
 mod sidebar;
 mod tab_bar;
 mod titlebar;
+mod update_actions;
 
 use std::path::{Path, PathBuf};
 
@@ -97,6 +98,8 @@ impl WorkspaceView {
                 this.activate_session(repo, session_id, window, cx);
             }
         }
+
+        this.spawn_update_check(window, cx);
 
         this
     }

@@ -1,10 +1,75 @@
 use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
 
+use crate::state::UpdateStatus;
 use crate::theme::theme;
 
 use super::WorkspaceView;
 
 impl WorkspaceView {
+    fn render_update_indicator(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let t = theme();
+        match &self.state.update_status {
+            UpdateStatus::Available {
+                version,
+                download_url,
+            } => {
+                let url = download_url.clone();
+                Some(
+                    div()
+                        .id("update-available")
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .px_2()
+                        .py_1()
+                        .rounded_sm()
+                        .text_xs()
+                        .text_color(t.accent_green)
+                        .hover(|style| style.cursor_pointer().bg(t.hover_overlay))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, window, cx| {
+                                this.on_start_update(url.clone(), window, cx);
+                            }),
+                        )
+                        .child(format!("Update {version}"))
+                        .into_any_element(),
+                )
+            }
+            UpdateStatus::Updating => Some(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .text_color(t.text_muted)
+                    .child("Updating...")
+                    .into_any_element(),
+            ),
+            UpdateStatus::Error(msg) => {
+                let _ = msg;
+                Some(
+                    div()
+                        .id("update-error")
+                        .px_2()
+                        .py_1()
+                        .rounded_sm()
+                        .text_xs()
+                        .text_color(t.accent_red)
+                        .hover(|style| style.cursor_pointer().bg(t.hover_overlay))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _, window, cx| {
+                                this.spawn_update_check(window, cx);
+                            }),
+                        )
+                        .child("Update failed - retry")
+                        .into_any_element(),
+                )
+            }
+            UpdateStatus::Idle | UpdateStatus::Checking => None,
+        }
+    }
+
     pub(crate) fn render_titlebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
         let left_collapsed = self.state.left_sidebar_collapsed;
@@ -49,12 +114,14 @@ impl WorkspaceView {
                             .child("⊞"),
                     ),
             )
-            // Right side: sidebar toggle
+            // Right side: update indicator + sidebar toggle
             .child(
                 div()
                     .flex()
                     .items_center()
+                    .gap_1()
                     .pr_2()
+                    .children(self.render_update_indicator(cx))
                     .child(
                         div()
                             .id("toggle-right-sidebar")

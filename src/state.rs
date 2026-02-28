@@ -153,7 +153,6 @@ pub enum ActionPhase {
 
 pub struct TerminalTab {
     pub id: String,
-    pub name: String,
     pub view: Entity<TerminalView>,
 }
 

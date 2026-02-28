@@ -44,7 +44,10 @@ fn is_conventional_commit(message: &str) -> bool {
     };
 
     // Type must be non-empty, lowercase alphanumeric
-    !type_part.is_empty() && type_part.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    !type_part.is_empty()
+        && type_part
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
 
 impl WorkspaceView {
@@ -87,7 +90,13 @@ impl WorkspaceView {
         let Some(repo) = self.state.selected_repo.as_ref().cloned() else {
             return;
         };
+        let Some(session_id) = self.state.selected_session.as_ref().cloned() else {
+            return;
+        };
         let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        let Some(session_runtime) = runtime.session_runtimes.get_mut(&session_id) else {
             return;
         };
 
@@ -100,10 +109,10 @@ impl WorkspaceView {
 
         match key.as_str() {
             "backspace" if !has_platform && !has_ctrl => {
-                runtime.commit_message.pop();
+                session_runtime.commit_message.pop();
             }
             "backspace" if has_platform || has_ctrl => {
-                runtime.commit_message.clear();
+                session_runtime.commit_message.clear();
             }
             "escape" => {
                 self.focus_handle.focus(_window, cx);
@@ -115,7 +124,7 @@ impl WorkspaceView {
                 // Insert the typed character if available
                 if let Some(ch) = key_char {
                     if !ch.is_empty() && ch.chars().all(|c: char| !c.is_control()) {
-                        runtime.commit_message.push_str(ch);
+                        session_runtime.commit_message.push_str(ch);
                     } else {
                         return;
                     }
@@ -132,35 +141,53 @@ impl WorkspaceView {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };
-        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+        let Some(session_id) = self.state.selected_session.clone() else {
             return;
         };
-        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
-            return;
-        }
-        let files: Vec<String> = runtime.staged_files.iter().cloned().collect();
-        if files.is_empty() {
-            return;
-        }
-        if runtime.commit_message.trim().is_empty() {
-            return;
-        }
+
+        let (files, message) = {
+            let Some(runtime) = self.state.runtimes.get(&repo) else {
+                return;
+            };
+            if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+                return;
+            }
+            let files: Vec<String> = runtime.staged_files.iter().cloned().collect();
+            if files.is_empty() {
+                return;
+            }
+            let Some(session_runtime) = runtime.session_runtimes.get(&session_id) else {
+                return;
+            };
+            if session_runtime.commit_message.trim().is_empty() {
+                return;
+            }
+            (files, session_runtime.commit_message.clone())
+        };
 
         // Validate conventional commit format if enforced
-        if let Some(project) = self.state.config.projects.iter().find(|p| p.repo_root == repo) {
-            if project.settings.enforce_conventional_commits
-                && !is_conventional_commit(&runtime.commit_message)
-            {
-                runtime.action_phase = ActionPhase::Error(
-                    "Commit message must follow Conventional Commits: type[(scope)]: description"
-                        .into(),
-                );
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo)
+        {
+            if project.settings.enforce_conventional_commits && !is_conventional_commit(&message) {
+                if let Some(runtime) = self.state.runtimes.get_mut(&repo) {
+                    runtime.action_phase = ActionPhase::Error(
+                        "Commit message must follow Conventional Commits: type[(scope)]: description"
+                            .into(),
+                    );
+                }
                 cx.notify();
                 return;
             }
         }
 
-        let message = runtime.commit_message.clone();
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
         runtime.action_phase = ActionPhase::Working("Committing...".into());
         cx.notify();
 
@@ -173,6 +200,7 @@ impl WorkspaceView {
 
         let view = cx.entity().clone();
         let repo_clone = repo.clone();
+        let session_id_clone = session_id.clone();
 
         window
             .spawn(cx, async move |cx| {
@@ -195,7 +223,8 @@ impl WorkspaceView {
                             }
                             cx.notify();
                         })
-                    }).ok();
+                    })
+                    .ok();
                     return;
                 }
 
@@ -215,6 +244,11 @@ impl WorkspaceView {
                                 Ok(()) => {
                                     rt.staged_files.clear();
                                     rt.action_phase = ActionPhase::Idle;
+                                    if let Some(session_rt) =
+                                        rt.session_runtimes.get_mut(&session_id_clone)
+                                    {
+                                        session_rt.commit_message.clear();
+                                    }
                                 }
                                 Err(e) => {
                                     rt.action_phase = ActionPhase::Error(format!("Push: {e}"));
@@ -223,7 +257,8 @@ impl WorkspaceView {
                         }
                         cx.notify();
                     })
-                }).ok();
+                })
+                .ok();
             })
             .detach();
     }
@@ -276,7 +311,8 @@ impl WorkspaceView {
                             }
                             cx.notify();
                         })
-                    }).ok();
+                    })
+                    .ok();
                     return;
                 }
 
@@ -304,7 +340,8 @@ impl WorkspaceView {
                         }
                         cx.notify();
                     })
-                }).ok();
+                })
+                .ok();
             })
             .detach();
     }
@@ -367,7 +404,8 @@ impl WorkspaceView {
                         }
                         cx.notify();
                     })
-                }).ok();
+                })
+                .ok();
             })
             .detach();
     }
@@ -421,7 +459,8 @@ impl WorkspaceView {
                         }
                         cx.notify();
                     })
-                }).ok();
+                })
+                .ok();
             })
             .detach();
     }

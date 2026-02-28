@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use gpui::Entity;
 use crate::terminal_view::view::TerminalView;
+use gpui::Entity;
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SavedSession {
@@ -162,6 +162,7 @@ pub struct SessionRuntime {
     pub side_tabs: Vec<TerminalTab>,
     pub selected_side_tab: Option<String>,
     pub next_tab_id: u64,
+    pub commit_message: String,
 }
 
 impl Default for SessionRuntime {
@@ -172,6 +173,7 @@ impl Default for SessionRuntime {
             side_tabs: Vec::new(),
             selected_side_tab: None,
             next_tab_id: 1,
+            commit_message: String::new(),
         }
     }
 }
@@ -182,7 +184,6 @@ pub struct ProjectRuntime {
     pub staged_files: HashSet<String>,
     pub branch_status: BranchStatus,
     pub action_phase: ActionPhase,
-    pub commit_message: String,
 }
 
 impl Default for ProjectRuntime {
@@ -193,7 +194,6 @@ impl Default for ProjectRuntime {
             staged_files: HashSet::new(),
             branch_status: BranchStatus::default(),
             action_phase: ActionPhase::default(),
-            commit_message: String::new(),
         }
     }
 }

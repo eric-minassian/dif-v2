@@ -1,4 +1,4 @@
-use gpui::{AnyElement, Context, Hsla, MouseButton, div, prelude::*, px};
+use gpui::{div, prelude::*, px, AnyElement, Context, Hsla, MouseButton};
 
 use crate::components::{panel, section_header, PanelSide};
 use crate::icons::{icon_check, icon_x};
@@ -80,7 +80,8 @@ impl WorkspaceView {
             .map(|rt| &rt.action_phase)
             .cloned()
             .unwrap_or_default();
-        let commit_message = project_runtime
+        let commit_message = self
+            .selected_session_runtime()
             .map(|rt| rt.commit_message.clone())
             .unwrap_or_default();
 
@@ -98,22 +99,21 @@ impl WorkspaceView {
             .border_b_1()
             .border_color(t.border_default)
             .child(
-                section_header("Changes")
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .when(count > 0, |el| {
-                                el.child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(t.text_dim)
-                                        .child(format!("{count}")),
-                                )
-                            })
-                            .child(header_action),
-                    ),
+                section_header("Changes").child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .when(count > 0, |el| {
+                            el.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.text_dim)
+                                    .child(format!("{count}")),
+                            )
+                        })
+                        .child(header_action),
+                ),
             )
             // Status bar (working / error)
             .child(self.render_action_status(&action_phase, cx))
@@ -224,17 +224,13 @@ impl WorkspaceView {
                     .hover(|style| style.opacity(0.85))
                     .on_mouse_up(
                         MouseButton::Left,
-                        cx.listener(move |this, event, window, cx| {
-                            match action_clone {
-                                PanelAction::Commit => this.on_commit(window, cx),
-                                PanelAction::Amend => this.on_amend(window, cx),
-                                PanelAction::CreatePR => this.on_create_pr(window, cx),
-                                PanelAction::Rebase => this.on_rebase(window, cx),
-                                PanelAction::CloseSession => {
-                                    this.on_close_session(event, window, cx)
-                                }
-                                PanelAction::None => {}
-                            }
+                        cx.listener(move |this, event, window, cx| match action_clone {
+                            PanelAction::Commit => this.on_commit(window, cx),
+                            PanelAction::Amend => this.on_amend(window, cx),
+                            PanelAction::CreatePR => this.on_create_pr(window, cx),
+                            PanelAction::Rebase => this.on_rebase(window, cx),
+                            PanelAction::CloseSession => this.on_close_session(event, window, cx),
+                            PanelAction::None => {}
                         }),
                     )
             })
@@ -364,10 +360,8 @@ impl WorkspaceView {
             _ => t.text_muted,
         };
 
-        let change_row_id =
-            gpui::ElementId::Name(format!("change-{}", change.path).into());
-        let checkbox_id =
-            gpui::ElementId::Name(format!("chk-{}", change.path).into());
+        let change_row_id = gpui::ElementId::Name(format!("change-{}", change.path).into());
+        let checkbox_id = gpui::ElementId::Name(format!("chk-{}", change.path).into());
 
         let toggle_path = change.path.clone();
 
@@ -403,9 +397,7 @@ impl WorkspaceView {
                             .text_color(gpui::rgb(0x1e1e1e))
                             .child(icon_check().size(px(10.)).text_color(gpui::rgb(0x1e1e1e)))
                     })
-                    .when(!is_staged, |el| {
-                        el.border_color(t.text_dim)
-                    })
+                    .when(!is_staged, |el| el.border_color(t.text_dim))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(move |this, _event, _window, cx| {

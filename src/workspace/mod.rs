@@ -167,6 +167,7 @@ impl WorkspaceView {
             side_tabs,
             selected_side_tab: selected_tab,
             next_tab_id: next_id,
+            commit_message: String::new(),
         };
 
         let runtime = self

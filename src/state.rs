@@ -19,8 +19,6 @@ pub struct ProjectSettings {
     pub workspace_init_commands: Vec<String>,
     #[serde(default)]
     pub enforce_conventional_commits: bool,
-    #[serde(default)]
-    pub auto_merge: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -151,6 +149,21 @@ pub struct CiCheck {
     pub link: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RepoCapabilities {
+    pub auto_merge_allowed: bool,
+    pub rebase_merge_allowed: bool,
+}
+
+impl Default for RepoCapabilities {
+    fn default() -> Self {
+        Self {
+            auto_merge_allowed: false,
+            rebase_merge_allowed: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BranchStatus {
     pub commits_ahead: u32,
@@ -159,6 +172,7 @@ pub struct BranchStatus {
     pub pr_number: Option<u32>,
     pub pr_state: Option<String>,
     pub checks: Vec<CiCheck>,
+    pub auto_merge_enabled: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -201,6 +215,7 @@ pub struct ProjectRuntime {
     pub git_snapshot: GitSnapshot,
     pub staged_files: HashSet<String>,
     pub branch_status: BranchStatus,
+    pub repo_capabilities: RepoCapabilities,
     pub action_phase: ActionPhase,
 }
 
@@ -211,6 +226,7 @@ impl Default for ProjectRuntime {
             git_snapshot: GitSnapshot::default(),
             staged_files: HashSet::new(),
             branch_status: BranchStatus::default(),
+            repo_capabilities: RepoCapabilities::default(),
             action_phase: ActionPhase::default(),
         }
     }

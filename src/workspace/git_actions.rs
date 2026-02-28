@@ -423,15 +423,6 @@ impl WorkspaceView {
             return;
         }
 
-        let auto_merge = self
-            .state
-            .config
-            .projects
-            .iter()
-            .find(|p| p.repo_root == repo)
-            .map(|p| p.settings.auto_merge)
-            .unwrap_or(false);
-
         runtime.action_phase = ActionPhase::Working("Merging...".into());
         cx.notify();
 
@@ -453,7 +444,7 @@ impl WorkspaceView {
                     .background_executor()
                     .spawn({
                         let dir = dir.clone();
-                        async move { git::merge_pr_rebase(&dir, auto_merge) }
+                        async move { git::merge_pr_rebase(&dir) }
                     })
                     .await;
 
@@ -466,6 +457,82 @@ impl WorkspaceView {
                                 }
                                 Err(e) => {
                                     rt.action_phase = ActionPhase::Error(format!("Merge: {e}"));
+                                }
+                            }
+                        }
+                        cx.notify();
+                    })
+                })
+                .ok();
+            })
+            .detach();
+    }
+
+    pub(crate) fn on_toggle_pr_auto_merge(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+
+        let currently_enabled = runtime.branch_status.auto_merge_enabled;
+        let label = if currently_enabled {
+            "Disabling auto-merge..."
+        } else {
+            "Enabling auto-merge..."
+        };
+        runtime.action_phase = ActionPhase::Working(label.into());
+        cx.notify();
+
+        let working_dir = self
+            .state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(&repo, sid))
+            .unwrap_or_else(|| repo.clone());
+
+        let view = cx.entity().clone();
+        let repo_clone = repo.clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                let dir = working_dir.clone();
+
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = dir.clone();
+                        async move {
+                            if currently_enabled {
+                                git::disable_auto_merge(&dir)
+                            } else {
+                                git::enable_auto_merge(&dir)
+                            }
+                        }
+                    })
+                    .await;
+
+                cx.update(|window, cx| {
+                    view.update(cx, |this, cx| {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                            match result {
+                                Ok(()) => {
+                                    rt.branch_status.auto_merge_enabled = !currently_enabled;
+                                    rt.action_phase = ActionPhase::Idle;
+                                    // Restart poll to pick up fresh state
+                                    this.start_git_poll(repo_clone.clone(), window, cx);
+                                }
+                                Err(e) => {
+                                    rt.action_phase =
+                                        ActionPhase::Error(format!("Auto-merge: {e}"));
                                 }
                             }
                         }
@@ -505,15 +572,21 @@ impl WorkspaceView {
                         .await;
 
                     // Every 5th tick (~10s) or on first tick, also collect branch status
-                    let branch_status = if tick % 5 == 0 {
+                    // and repo capabilities
+                    let (branch_status, repo_caps) = if tick % 5 == 0 {
                         let dir = git_dir.clone();
-                        Some(
-                            cx.background_executor()
-                                .spawn(async move { git::collect_branch_status(&dir) })
-                                .await,
-                        )
+                        let dir2 = git_dir.clone();
+                        let status = cx
+                            .background_executor()
+                            .spawn(async move { git::collect_branch_status(&dir) })
+                            .await;
+                        let caps = cx
+                            .background_executor()
+                            .spawn(async move { git::check_repo_capabilities(&dir2) })
+                            .await;
+                        (Some(status), Some(caps))
                     } else {
-                        None
+                        (None, None)
                     };
 
                     let keep_running = cx
@@ -540,6 +613,13 @@ impl WorkspaceView {
                                             this.state.checks_popover_open = false;
                                         }
                                         runtime.branch_status = status;
+                                        changed = true;
+                                    }
+                                }
+
+                                if let Some(caps) = repo_caps {
+                                    if runtime.repo_capabilities != caps {
+                                        runtime.repo_capabilities = caps;
                                         changed = true;
                                     }
                                 }

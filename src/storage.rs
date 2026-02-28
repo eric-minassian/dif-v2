@@ -104,7 +104,6 @@ pub fn load_config() -> Result<AppConfig> {
                 .map(|raw| ProjectSettings {
                     workspace_init_commands: raw.workspace_init_commands.unwrap_or_default(),
                     enforce_conventional_commits: raw.enforce_conventional_commits.unwrap_or(false),
-                    auto_merge: raw.auto_merge.unwrap_or(false),
                 })
                 .unwrap_or_default();
 

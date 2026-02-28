@@ -2,7 +2,7 @@ use gpui::{div, prelude::*, px, AnyElement, Context, Hsla, MouseButton};
 
 use crate::components::{panel, section_header, PanelSide};
 use crate::icons::{icon_check, icon_circle_dot, icon_external_link, icon_minus, icon_x};
-use crate::state::{ActionPhase, BranchStatus, CheckBucket, CiCheck, GitChange};
+use crate::state::{ActionPhase, BranchStatus, CheckBucket, CiCheck, GitChange, RepoCapabilities};
 use crate::theme::theme;
 
 use super::WorkspaceView;
@@ -85,11 +85,22 @@ impl WorkspaceView {
             .map(|rt| rt.commit_message.clone())
             .unwrap_or_default();
 
+        let repo_capabilities = project_runtime
+            .map(|rt| &rt.repo_capabilities)
+            .cloned()
+            .unwrap_or_default();
+
         let panel_action = derive_panel_action(has_changes, staged_count, &branch_status);
         let is_busy = matches!(action_phase, ActionPhase::Working(_));
 
         // Build the action button for the header bar
-        let header_action = self.render_header_action_button(&panel_action, &action_phase, cx);
+        let header_action = self.render_header_action_button(
+            &panel_action,
+            &action_phase,
+            &branch_status,
+            &repo_capabilities,
+            cx,
+        );
 
         // Build inline PR link for header
         let pr_link = self.render_header_pr_link(&branch_status);
@@ -205,7 +216,7 @@ impl WorkspaceView {
                         .h(px(10000.))
                         .on_mouse_up(MouseButton::Left, backdrop_listener),
                 )
-                .child(Self::render_checks_popover(&branch_status));
+                .child(self.render_checks_popover(&branch_status, &repo_capabilities, cx));
         }
 
         panel_div.into_any_element()
@@ -215,36 +226,83 @@ impl WorkspaceView {
         &self,
         action: &PanelAction,
         phase: &ActionPhase,
+        branch_status: &BranchStatus,
+        repo_capabilities: &RepoCapabilities,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let t = theme();
         let is_busy = matches!(phase, ActionPhase::Working(_));
 
-        let auto_merge = self
-            .state
-            .selected_repo
-            .as_ref()
-            .and_then(|repo| {
-                self.state
-                    .config
-                    .projects
+        // For the Rebase action, decide whether to show "Rebase & Merge" or "Auto Merge"
+        if *action == PanelAction::Rebase {
+            let checks = &branch_status.checks;
+            let all_checks_pass = !checks.is_empty()
+                && checks
                     .iter()
-                    .find(|p| &p.repo_root == repo)
-            })
-            .map(|p| p.settings.auto_merge)
-            .unwrap_or(false);
+                    .all(|c| matches!(c.bucket, CheckBucket::Pass | CheckBucket::Skipping));
+            let auto_merge_enabled = branch_status.auto_merge_enabled;
 
-        let rebase_label = if auto_merge {
-            "Auto Merge"
-        } else {
-            "Rebase & Merge"
-        };
+            // If auto-merge is already enabled on the PR, show toggle to disable
+            if auto_merge_enabled {
+                return div()
+                    .id("action-auto-merge")
+                    .px_2()
+                    .py(px(2.))
+                    .rounded_md()
+                    .text_xs()
+                    .bg(t.accent_purple)
+                    .text_color(t.bg_panel)
+                    .when(is_busy, |el| el.opacity(0.5))
+                    .when(!is_busy, |el| {
+                        el.cursor_pointer()
+                            .hover(|style| style.opacity(0.85))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, window, cx| {
+                                    this.on_toggle_pr_auto_merge(window, cx);
+                                }),
+                            )
+                    })
+                    .child("Auto Merge")
+                    .into_any_element();
+            }
+
+            // Checks still pending/failing: show auto-merge toggle if repo supports it
+            if !all_checks_pass && repo_capabilities.auto_merge_allowed {
+                return div()
+                    .id("action-auto-merge")
+                    .px_2()
+                    .py(px(2.))
+                    .rounded_md()
+                    .text_xs()
+                    .bg(t.accent_green)
+                    .text_color(gpui::rgb(0x1e1e1e))
+                    .when(is_busy, |el| el.opacity(0.5))
+                    .when(!is_busy, |el| {
+                        el.cursor_pointer()
+                            .hover(|style| style.opacity(0.85))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, window, cx| {
+                                    this.on_toggle_pr_auto_merge(window, cx);
+                                }),
+                            )
+                    })
+                    .child("Auto Merge")
+                    .into_any_element();
+            }
+
+            // All checks pass (or no checks): show immediate merge if repo allows rebase
+            if !repo_capabilities.rebase_merge_allowed {
+                return div().into_any_element();
+            }
+        }
 
         let (button_id, label, bg_color): (&str, &str, Hsla) = match action {
             PanelAction::Commit => ("action-commit", "Commit", t.accent_green),
             PanelAction::Amend => ("action-amend", "Amend", t.accent_green),
             PanelAction::CreatePR => ("action-create-pr", "Create PR", t.accent_green),
-            PanelAction::Rebase => ("action-rebase", rebase_label, t.accent_green),
+            PanelAction::Rebase => ("action-rebase", "Rebase & Merge", t.accent_green),
             PanelAction::CloseSession => ("action-close", "Close Session", t.accent_red),
             PanelAction::None => return div().into_any_element(),
         };
@@ -467,7 +525,12 @@ impl WorkspaceView {
             .into_any_element()
     }
 
-    fn render_checks_popover(branch_status: &BranchStatus) -> AnyElement {
+    fn render_checks_popover(
+        &self,
+        branch_status: &BranchStatus,
+        repo_capabilities: &RepoCapabilities,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let t = theme();
 
         let checks = &branch_status.checks;
@@ -481,6 +544,13 @@ impl WorkspaceView {
         });
 
         let pr_url = branch_status.pr_url.clone();
+        let pr_is_open = branch_status
+            .pr_state
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("OPEN"))
+            .unwrap_or(true)
+            && pr_url.is_some()
+            && !branch_status.pr_merged;
 
         let mut popover = div()
             .id("checks-popover")
@@ -584,6 +654,51 @@ impl WorkspaceView {
                 .enumerate()
                 .map(|(i, check)| Self::render_popover_check_row(check, i)),
         );
+
+        // Auto-merge toggle row (only when repo allows it and PR is open)
+        if repo_capabilities.auto_merge_allowed && pr_is_open {
+            let is_auto = branch_status.auto_merge_enabled;
+            popover = popover.child(
+                div()
+                    .id("popover-auto-merge-toggle")
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_2()
+                    .py(px(6.))
+                    .border_t_1()
+                    .border_color(t.border_subtle)
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.text_secondary)
+                            .child("Auto-merge"),
+                    )
+                    .child(
+                        div()
+                            .id("auto-merge-btn")
+                            .cursor_pointer()
+                            .px_2()
+                            .py(px(2.))
+                            .rounded_sm()
+                            .text_xs()
+                            .bg(if is_auto { t.accent_green } else { t.bg_surface })
+                            .text_color(if is_auto {
+                                t.bg_panel
+                            } else {
+                                t.text_muted
+                            })
+                            .hover(|style| style.opacity(0.85))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, window, cx| {
+                                    this.on_toggle_pr_auto_merge(window, cx);
+                                }),
+                            )
+                            .child(if is_auto { "On" } else { "Off" }),
+                    ),
+            );
+        }
 
         popover.into_any_element()
     }

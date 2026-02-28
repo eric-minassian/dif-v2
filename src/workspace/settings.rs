@@ -10,6 +10,25 @@ use crate::updater;
 use super::WorkspaceView;
 
 impl WorkspaceView {
+    pub(crate) fn on_toggle_conventional_commits(
+        &mut self,
+        repo_root: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        {
+            project.settings.enforce_conventional_commits =
+                !project.settings.enforce_conventional_commits;
+        }
+        self.persist_config();
+        cx.notify();
+    }
+
     pub(crate) fn on_open_settings(&mut self, cx: &mut Context<Self>) {
         self.state.viewing_settings = true;
         cx.notify();
@@ -279,6 +298,60 @@ impl WorkspaceView {
                         .text_color(t.text_dim)
                         .child(project.repo_root.display().to_string()),
                 );
+
+            // Conventional commits toggle
+            {
+                let toggle_repo = repo_root.clone();
+                let is_enabled = project.settings.enforce_conventional_commits;
+                let toggle_id = gpui::ElementId::Name(
+                    format!("cc-toggle-{}", project.display_name).into(),
+                );
+                project_section = project_section.child(
+                    div()
+                        .mt_2()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_0p5()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_secondary)
+                                        .child("Enforce conventional commits"),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(t.text_dim)
+                                        .child("Reject commits not matching type[(scope)]: description"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id(toggle_id)
+                                .cursor_pointer()
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .text_xs()
+                                .bg(if is_enabled { t.accent_green } else { t.bg_surface })
+                                .text_color(if is_enabled { t.bg_panel } else { t.text_muted })
+                                .hover(|style| style.bg(t.bg_elevated_hover))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _event, _window, cx| {
+                                        this.on_toggle_conventional_commits(toggle_repo.clone(), cx);
+                                    }),
+                                )
+                                .child(if is_enabled { "On" } else { "Off" }),
+                        ),
+                );
+            }
 
             // Workspace init commands subsection
             project_section = project_section

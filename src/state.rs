@@ -17,6 +17,8 @@ pub struct SavedSession {
 pub struct ProjectSettings {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspace_init_commands: Vec<String>,
+    #[serde(default)]
+    pub enforce_conventional_commits: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]

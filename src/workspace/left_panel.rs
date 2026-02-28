@@ -187,7 +187,7 @@ impl WorkspaceView {
 
                         // Session rows (only when expanded and valid)
                         if project.last_known_valid && !is_collapsed {
-                            for session in &project.sessions {
+                            for (session_index, session) in project.sessions.iter().enumerate() {
                                 let session_repo = project.repo_root.clone();
                                 let session_id = session.id.clone();
                                 let delete_repo = project.repo_root.clone();
@@ -266,6 +266,10 @@ impl WorkspaceView {
                                         .into_any_element()
                                 };
 
+                                let show_badge = self.state.cmd_held
+                                    && is_project_selected
+                                    && session_index < 9;
+
                                 container = container.child(
                                     div()
                                         .id(session_row_id)
@@ -282,6 +286,16 @@ impl WorkspaceView {
                                             t.transparent
                                         })
                                         .hover(|style| style.bg(t.hover_overlay))
+                                        .when(show_badge, |el| {
+                                            el.child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .w(px(14.))
+                                                    .flex_shrink_0()
+                                                    .child(format!("{}", session_index + 1)),
+                                            )
+                                        })
                                         .child(name_content)
                                         .child(
                                             div()

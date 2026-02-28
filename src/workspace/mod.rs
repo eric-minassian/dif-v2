@@ -35,15 +35,15 @@ actions!(
     [
         NewSideTab,
         CloseSideTab,
-        SelectSideTab1,
-        SelectSideTab2,
-        SelectSideTab3,
-        SelectSideTab4,
-        SelectSideTab5,
-        SelectSideTab6,
-        SelectSideTab7,
-        SelectSideTab8,
-        SelectSideTab9,
+        SelectSession1,
+        SelectSession2,
+        SelectSession3,
+        SelectSession4,
+        SelectSession5,
+        SelectSession6,
+        SelectSession7,
+        SelectSession8,
+        SelectSession9,
         CloseDiffView,
         ToggleLeftSidebar,
         ToggleRightSidebar,
@@ -340,33 +340,42 @@ impl Render for WorkspaceView {
             .on_action(cx.listener(|this, _: &RefreshGitStatus, window, cx| {
                 this.on_refresh_git_status(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab1, _w, cx| {
-                this.select_side_tab_by_index(0, cx);
+            .on_action(cx.listener(|this, _: &SelectSession1, window, cx| {
+                this.select_session_by_index(0, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab2, _w, cx| {
-                this.select_side_tab_by_index(1, cx);
+            .on_action(cx.listener(|this, _: &SelectSession2, window, cx| {
+                this.select_session_by_index(1, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab3, _w, cx| {
-                this.select_side_tab_by_index(2, cx);
+            .on_action(cx.listener(|this, _: &SelectSession3, window, cx| {
+                this.select_session_by_index(2, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab4, _w, cx| {
-                this.select_side_tab_by_index(3, cx);
+            .on_action(cx.listener(|this, _: &SelectSession4, window, cx| {
+                this.select_session_by_index(3, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab5, _w, cx| {
-                this.select_side_tab_by_index(4, cx);
+            .on_action(cx.listener(|this, _: &SelectSession5, window, cx| {
+                this.select_session_by_index(4, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab6, _w, cx| {
-                this.select_side_tab_by_index(5, cx);
+            .on_action(cx.listener(|this, _: &SelectSession6, window, cx| {
+                this.select_session_by_index(5, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab7, _w, cx| {
-                this.select_side_tab_by_index(6, cx);
+            .on_action(cx.listener(|this, _: &SelectSession7, window, cx| {
+                this.select_session_by_index(6, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab8, _w, cx| {
-                this.select_side_tab_by_index(7, cx);
+            .on_action(cx.listener(|this, _: &SelectSession8, window, cx| {
+                this.select_session_by_index(7, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &SelectSideTab9, _w, cx| {
-                this.select_side_tab_by_index(8, cx);
+            .on_action(cx.listener(|this, _: &SelectSession9, window, cx| {
+                this.select_session_by_index(8, window, cx);
             }))
+            .on_modifiers_changed(cx.listener(
+                |this, event: &gpui::ModifiersChangedEvent, _window, cx| {
+                    let new_val = event.modifiers.platform;
+                    if this.state.cmd_held != new_val {
+                        this.state.cmd_held = new_val;
+                        cx.notify();
+                    }
+                },
+            ))
             .on_mouse_move(cx.listener(Self::on_resize_drag))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_resize_end))
             .when(is_resizing, |el| el.cursor(CursorStyle::ResizeLeftRight))

@@ -212,6 +212,24 @@ impl WorkspaceView {
         self.on_delete_session(repo, session_id, _event, window, cx);
     }
 
+    pub(crate) fn select_session_by_index(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(project) = self.state.config.projects.iter().find(|p| p.repo_root == repo) else {
+            return;
+        };
+        if let Some(session) = project.sessions.get(index) {
+            let session_id = session.id.clone();
+            self.activate_session(repo, session_id, window, cx);
+        }
+    }
+
     pub(crate) fn activate_session(
         &mut self,
         repo_root: PathBuf,

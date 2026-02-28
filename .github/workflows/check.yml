@@ -25,4 +25,6 @@ jobs:
           restore-keys: macos-cargo-check-
 
       - name: cargo check
+        env:
+          CARGO_TARGET_DIR: target
         run: cargo check

@@ -86,21 +86,28 @@ pub struct GitSnapshot {
     pub last_error: Option<String>,
 }
 
-pub struct TerminalPair {
-    pub main: Entity<TerminalView>,
-    pub side: Entity<TerminalView>,
+pub struct TerminalTab {
+    pub id: String,
+    pub name: String,
+    pub view: Entity<TerminalView>,
 }
 
 pub struct SessionRuntime {
-    pub terminals: Option<TerminalPair>,
-    pub terminal_error: Option<String>,
+    pub main_terminal: Option<Entity<TerminalView>>,
+    pub main_terminal_error: Option<String>,
+    pub side_tabs: Vec<TerminalTab>,
+    pub selected_side_tab: Option<String>,
+    pub next_tab_id: u64,
 }
 
 impl Default for SessionRuntime {
     fn default() -> Self {
         Self {
-            terminals: None,
-            terminal_error: None,
+            main_terminal: None,
+            main_terminal_error: None,
+            side_tabs: Vec::new(),
+            selected_side_tab: None,
+            next_tab_id: 1,
         }
     }
 }

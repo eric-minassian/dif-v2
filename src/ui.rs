@@ -2,20 +2,38 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, Context, Div, MouseButton, MouseUpEvent, Window, div, prelude::*, px,
+    actions, AnyElement, Context, Div, FocusHandle, MouseButton, MouseUpEvent, Window, div,
+    prelude::*, px,
 };
 
 use crate::git;
 use crate::picker;
 use crate::state::{
     AppConfig, AppState, GitChange, ProjectRuntime, SavedProject, SavedSession, SessionRuntime,
-    TerminalPair,
+    TerminalTab,
 };
 use crate::storage;
 use crate::terminal;
 
+actions!(
+    workspace,
+    [
+        NewSideTab,
+        SelectSideTab1,
+        SelectSideTab2,
+        SelectSideTab3,
+        SelectSideTab4,
+        SelectSideTab5,
+        SelectSideTab6,
+        SelectSideTab7,
+        SelectSideTab8,
+        SelectSideTab9,
+    ]
+);
+
 pub struct WorkspaceView {
     state: AppState,
+    focus_handle: FocusHandle,
 }
 
 impl WorkspaceView {
@@ -32,7 +50,10 @@ impl WorkspaceView {
             .as_ref()
             .and_then(|repo| pick_initial_session(&state.config, repo));
 
-        let mut this = Self { state };
+        let focus_handle = cx.focus_handle();
+        window.focus(&focus_handle);
+
+        let mut this = Self { state, focus_handle };
         if let Some(repo) = this.state.selected_repo.clone() {
             if let Some(session_id) = this.state.selected_session.clone() {
                 this.activate_session(repo, session_id, window, cx);
@@ -181,6 +202,106 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    fn on_select_side_tab(&mut self, tab_id: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.as_ref() else {
+            return;
+        };
+        let Some(session_id) = self.state.selected_session.as_ref() else {
+            return;
+        };
+        let Some(project_runtime) = self.state.runtimes.get_mut(repo) else {
+            return;
+        };
+        let Some(session_runtime) = project_runtime.session_runtimes.get_mut(session_id) else {
+            return;
+        };
+
+        session_runtime.selected_side_tab = Some(tab_id);
+        cx.notify();
+    }
+
+    fn on_add_side_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(session_id) = self.state.selected_session.clone() else {
+            return;
+        };
+
+        let Some(project_runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        let Some(session_runtime) = project_runtime.session_runtimes.get_mut(&session_id) else {
+            return;
+        };
+
+        match terminal::spawn_terminal(window, cx, &repo) {
+            Ok(view) => {
+                let id = session_runtime.next_tab_id.to_string();
+                session_runtime.next_tab_id += 1;
+                let name = format!("Terminal {id}");
+                session_runtime.side_tabs.push(TerminalTab {
+                    id: id.clone(),
+                    name,
+                    view,
+                });
+                session_runtime.selected_side_tab = Some(id);
+            }
+            Err(error) => {
+                self.state.flash_error = Some(format!("Failed to create terminal: {error}"));
+            }
+        }
+        cx.notify();
+    }
+
+    fn on_delete_side_tab(&mut self, tab_id: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.as_ref() else {
+            return;
+        };
+        let Some(session_id) = self.state.selected_session.as_ref() else {
+            return;
+        };
+        let Some(project_runtime) = self.state.runtimes.get_mut(repo) else {
+            return;
+        };
+        let Some(session_runtime) = project_runtime.session_runtimes.get_mut(session_id) else {
+            return;
+        };
+
+        session_runtime.side_tabs.retain(|t| t.id != tab_id);
+
+        if session_runtime
+            .selected_side_tab
+            .as_ref()
+            .is_some_and(|s| s == &tab_id)
+        {
+            session_runtime.selected_side_tab =
+                session_runtime.side_tabs.first().map(|t| t.id.clone());
+        }
+
+        cx.notify();
+    }
+
+    fn select_side_tab_by_index(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.as_ref() else {
+            return;
+        };
+        let Some(session_id) = self.state.selected_session.as_ref() else {
+            return;
+        };
+        let Some(project_runtime) = self.state.runtimes.get_mut(repo) else {
+            return;
+        };
+        let Some(session_runtime) = project_runtime.session_runtimes.get_mut(session_id) else {
+            return;
+        };
+
+        if let Some(tab) = session_runtime.side_tabs.get(index) {
+            session_runtime.selected_side_tab = Some(tab.id.clone());
+            cx.notify();
+        }
+    }
+
     fn add_project_from_path(
         &mut self,
         path: PathBuf,
@@ -255,18 +376,36 @@ impl WorkspaceView {
             }
         }
 
-        let session_runtime = match (
-            terminal::spawn_terminal(window, cx, repo_root),
-            terminal::spawn_terminal(window, cx, repo_root),
-        ) {
-            (Ok(main), Ok(side)) => SessionRuntime {
-                terminals: Some(TerminalPair { main, side }),
-                terminal_error: None,
-            },
-            (Err(error), _) | (_, Err(error)) => SessionRuntime {
-                terminals: None,
-                terminal_error: Some(error.to_string()),
-            },
+        // Create main terminal
+        let (main_terminal, main_error) = match terminal::spawn_terminal(window, cx, repo_root) {
+            Ok(view) => (Some(view), None),
+            Err(error) => (None, Some(error.to_string())),
+        };
+
+        // Create initial side terminal tab
+        let (side_tabs, selected_tab, next_id) = match terminal::spawn_terminal(window, cx, repo_root)
+        {
+            Ok(view) => {
+                let tab = TerminalTab {
+                    id: "1".to_string(),
+                    name: "Terminal 1".to_string(),
+                    view,
+                };
+                (vec![tab], Some("1".to_string()), 2)
+            }
+            Err(error) => {
+                self.state.flash_error =
+                    Some(format!("Failed to create side terminal: {error}"));
+                (vec![], None, 1)
+            }
+        };
+
+        let session_runtime = SessionRuntime {
+            main_terminal,
+            main_terminal_error: main_error,
+            side_tabs,
+            selected_side_tab: selected_tab,
+            next_tab_id: next_id,
         };
 
         let runtime = self
@@ -594,19 +733,19 @@ impl WorkspaceView {
                 .into_any_element();
         };
 
-        if let Some(error) = &session_runtime.terminal_error {
+        if let Some(error) = &session_runtime.main_terminal_error {
             return self
                 .empty_card(&format!("Terminal failed to start: {error}"))
                 .into_any_element();
         }
 
-        if let Some(terminals) = &session_runtime.terminals {
+        if let Some(terminal) = &session_runtime.main_terminal {
             return div()
                 .flex_1()
                 .min_w_0()
                 .min_h_0()
                 .bg(gpui::black())
-                .child(terminals.main.clone())
+                .child(terminal.clone())
                 .into_any_element();
         }
 
@@ -614,9 +753,9 @@ impl WorkspaceView {
             .into_any_element()
     }
 
-    fn render_right_sidebar(&self) -> AnyElement {
+    fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let top = self.render_changes_panel();
-        let bottom = self.render_side_terminal();
+        let bottom = self.render_side_terminal(cx);
 
         div()
             .w(px(320.))
@@ -720,29 +859,125 @@ impl WorkspaceView {
             .into_any_element()
     }
 
-    fn render_side_terminal(&self) -> AnyElement {
+    fn render_side_terminal(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(session_runtime) = self.selected_session_runtime() else {
             return self
-                .empty_card("Select a session to start the side terminal.")
+                .empty_card("Select a session to start terminals.")
                 .into_any_element();
         };
 
-        if let Some(error) = &session_runtime.terminal_error {
-            return self
-                .empty_card(&format!("Terminal failed to start: {error}"))
-                .into_any_element();
-        }
+        let tab_bar = self.render_tab_bar(session_runtime, cx);
 
-        if let Some(terminals) = &session_runtime.terminals {
-            return div()
-                .flex_1()
-                .min_h_0()
-                .bg(gpui::black())
-                .child(terminals.side.clone())
-                .into_any_element();
-        }
+        let terminal_content =
+            if let Some(selected_id) = &session_runtime.selected_side_tab {
+                if let Some(tab) =
+                    session_runtime.side_tabs.iter().find(|t| t.id == *selected_id)
+                {
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .bg(gpui::black())
+                        .child(tab.view.clone())
+                        .into_any_element()
+                } else {
+                    self.empty_card("No terminal selected.").into_any_element()
+                }
+            } else if session_runtime.side_tabs.is_empty() {
+                self.empty_card("Click + to add a terminal.")
+                    .into_any_element()
+            } else {
+                self.empty_card("No terminal selected.").into_any_element()
+            };
 
-        self.empty_card("Starting side terminal...")
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(tab_bar)
+            .child(terminal_content)
+            .into_any_element()
+    }
+
+    fn render_tab_bar(
+        &self,
+        session_runtime: &SessionRuntime,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let selected_id = session_runtime.selected_side_tab.as_ref();
+
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .border_b_1()
+            .border_color(gpui::rgb(0x1e293b))
+            .bg(gpui::rgb(0x0f172a))
+            .children(session_runtime.side_tabs.iter().map(|tab| {
+                let is_selected = selected_id.is_some_and(|s| s == &tab.id);
+                let select_tab_id = tab.id.clone();
+                let delete_tab_id = tab.id.clone();
+
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .bg(if is_selected {
+                        gpui::rgb(0x1e293b)
+                    } else {
+                        gpui::rgba(0x00000000)
+                    })
+                    .child(
+                        div()
+                            .cursor_pointer()
+                            .text_xs()
+                            .text_color(if is_selected {
+                                gpui::rgb(0xffffff)
+                            } else {
+                                gpui::rgb(0x94a3b8)
+                            })
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |this, _event, _window, cx| {
+                                    this.on_select_side_tab(select_tab_id.clone(), cx);
+                                }),
+                            )
+                            .child(tab.name.clone()),
+                    )
+                    .child(
+                        div()
+                            .cursor_pointer()
+                            .text_xs()
+                            .text_color(gpui::rgb(0x475569))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |this, _event, _window, cx| {
+                                    this.on_delete_side_tab(delete_tab_id.clone(), cx);
+                                }),
+                            )
+                            .child("x"),
+                    )
+            }))
+            .child(
+                div()
+                    .cursor_pointer()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .text_color(gpui::rgb(0x64748b))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _event, window, cx| {
+                            this.on_add_side_tab(window, cx);
+                        }),
+                    )
+                    .child("+"),
+            )
             .into_any_element()
     }
 
@@ -767,6 +1002,38 @@ impl WorkspaceView {
 impl Render for WorkspaceView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .id("workspace")
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(|this, _: &NewSideTab, window, cx| {
+                this.on_add_side_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab1, _w, cx| {
+                this.select_side_tab_by_index(0, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab2, _w, cx| {
+                this.select_side_tab_by_index(1, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab3, _w, cx| {
+                this.select_side_tab_by_index(2, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab4, _w, cx| {
+                this.select_side_tab_by_index(3, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab5, _w, cx| {
+                this.select_side_tab_by_index(4, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab6, _w, cx| {
+                this.select_side_tab_by_index(5, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab7, _w, cx| {
+                this.select_side_tab_by_index(6, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab8, _w, cx| {
+                this.select_side_tab_by_index(7, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectSideTab9, _w, cx| {
+                this.select_side_tab_by_index(8, cx);
+            }))
             .size_full()
             .flex()
             .flex_col()
@@ -780,7 +1047,7 @@ impl Render for WorkspaceView {
                     .flex()
                     .child(self.render_left_sidebar(cx))
                     .child(self.render_center())
-                    .child(self.render_right_sidebar()),
+                    .child(self.render_right_sidebar(cx)),
             )
     }
 }

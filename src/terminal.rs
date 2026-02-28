@@ -8,9 +8,30 @@ use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 pub fn spawn_terminal<T: 'static>(
+    window: &mut Window,
+    cx: &mut Context<T>,
+    working_directory: &Path,
+) -> Result<Entity<TerminalView>> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    spawn_terminal_inner(window, cx, working_directory, &shell, &["-l"])
+}
+
+#[allow(dead_code)]
+pub fn spawn_claude_terminal<T: 'static>(
+    window: &mut Window,
+    cx: &mut Context<T>,
+    working_directory: &Path,
+) -> Result<Entity<TerminalView>> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    spawn_terminal_inner(window, cx, working_directory, &shell, &["-l", "-c", "claude"])
+}
+
+fn spawn_terminal_inner<T: 'static>(
     _window: &mut Window,
     cx: &mut Context<T>,
     working_directory: &Path,
+    command: &str,
+    args: &[&str],
 ) -> Result<Entity<TerminalView>> {
     let config = TerminalConfig {
         cols: 80,
@@ -33,17 +54,18 @@ pub fn spawn_terminal<T: 'static>(
         })
         .context("failed to create pty")?;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    let mut command = CommandBuilder::new(shell);
-    command.arg("-l");
-    command.cwd(working_directory);
-    command.env("TERM", "xterm-256color");
-    command.env("COLORTERM", "truecolor");
-    command.env("TERM_PROGRAM", "dif");
+    let mut cmd = CommandBuilder::new(command);
+    for arg in args {
+        cmd.arg(*arg);
+    }
+    cmd.cwd(working_directory);
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("TERM_PROGRAM", "dif");
     let mut child = pty_pair
         .slave
-        .spawn_command(command)
-        .context("failed to spawn shell")?;
+        .spawn_command(cmd)
+        .context("failed to spawn command")?;
 
     thread::spawn(move || {
         let _ = child.wait();

@@ -1,31 +1,18 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g. 0.2.0)'
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set version and tag
-        run: |
-          sed -i '' 's/^version = ".*"/version = "${{ inputs.version }}"/' Cargo.toml
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml
-          git commit -m "release v${{ inputs.version }}"
-          git tag "v${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -51,6 +38,5 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
           files: build/Dif-macos.tar.gz
           generate_release_notes: true

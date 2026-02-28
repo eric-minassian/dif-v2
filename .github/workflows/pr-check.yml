@@ -1,0 +1,36 @@
+name: PR Check
+
+on:
+  pull_request:
+  merge_group:
+
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-cargo-check-${{ hashFiles('Cargo.lock') }}
+          restore-keys: macos-cargo-check-
+
+      - name: Run cargo check
+        env:
+          CARGO_TARGET_DIR: target
+        run: cargo check --locked

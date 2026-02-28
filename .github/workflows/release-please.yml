@@ -32,11 +32,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.14.1
-
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
         with:
@@ -50,7 +45,6 @@ jobs:
       - name: Build and bundle
         env:
           CARGO_TARGET_DIR: target
-          ZIG: zig
         run: |
           chmod +x scripts/bundle.sh
           scripts/bundle.sh

@@ -17,18 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Bump version
+      - name: Set version and tag
         run: |
           sed -i '' 's/^version = ".*"/version = "${{ inputs.version }}"/' Cargo.toml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml
           git commit -m "release v${{ inputs.version }}"
           git tag "v${{ inputs.version }}"
-          git push origin HEAD:main --tags
+          git push origin "v${{ inputs.version }}"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

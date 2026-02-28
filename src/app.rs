@@ -4,8 +4,9 @@ use crate::text_input;
 
 use crate::storage;
 use crate::workspace::{
-    CloseDiffView, NewSideTab, RefreshGitStatus, SelectSideTab1, SelectSideTab2, SelectSideTab3,
-    SelectSideTab4, SelectSideTab5, SelectSideTab6, SelectSideTab7, SelectSideTab8, SelectSideTab9,
+    CloseDiffView, CloseSideTab, HideApp, HideOtherApps, MinimizeWindow, NewSideTab, Quit,
+    RefreshGitStatus, SelectSideTab1, SelectSideTab2, SelectSideTab3, SelectSideTab4,
+    SelectSideTab5, SelectSideTab6, SelectSideTab7, SelectSideTab8, SelectSideTab9,
     ToggleLeftSidebar, ToggleRightSidebar, WorkspaceView,
 };
 
@@ -13,6 +14,13 @@ pub fn run() {
     Application::new().run(|cx: &mut App| {
         cx.bind_keys(text_input::key_bindings());
         cx.bind_keys([
+            // Standard macOS application keybindings
+            KeyBinding::new("cmd-q", Quit, None),
+            KeyBinding::new("cmd-h", HideApp, None),
+            KeyBinding::new("cmd-alt-h", HideOtherApps, None),
+            KeyBinding::new("cmd-m", MinimizeWindow, None),
+            KeyBinding::new("cmd-w", CloseSideTab, None),
+            // App keybindings
             KeyBinding::new("escape", CloseDiffView, None),
             KeyBinding::new("cmd-t", NewSideTab, None),
             KeyBinding::new("cmd-b", ToggleLeftSidebar, None),
@@ -31,6 +39,11 @@ pub fn run() {
             KeyBinding::new("cmd-c", Copy, None),
             KeyBinding::new("cmd-v", Paste, None),
         ]);
+
+        // Global action handlers for standard macOS behaviors
+        cx.on_action(|_: &Quit, cx| cx.quit());
+        cx.on_action(|_: &HideApp, cx| cx.hide());
+        cx.on_action(|_: &HideOtherApps, cx| cx.hide_other_apps());
 
         let config = storage::load_config().unwrap_or_default();
 

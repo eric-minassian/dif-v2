@@ -1318,6 +1318,7 @@ dependencies = [
  "serde_json",
  "similar",
  "smallvec",
+ "unicode-segmentation",
  "unicode-width",
 ]
 

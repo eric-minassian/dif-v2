@@ -1,5 +1,6 @@
 use gpui::{App, AppContext, Application, KeyBinding, TitlebarOptions, WindowOptions, point, px};
 use crate::terminal_view::view::{Copy, Paste, SelectAll};
+use crate::text_input;
 
 use crate::storage;
 use crate::ui::{
@@ -10,6 +11,7 @@ use crate::ui::{
 
 pub fn run() {
     Application::new().run(|cx: &mut App| {
+        cx.bind_keys(text_input::key_bindings());
         cx.bind_keys([
             KeyBinding::new("escape", CloseDiffView, None),
             KeyBinding::new("cmd-t", NewSideTab, None),

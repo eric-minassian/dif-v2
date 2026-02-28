@@ -3,8 +3,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, AnyElement, Context, CursorStyle, FocusHandle, MouseButton, MouseMoveEvent,
-    MouseUpEvent, Window, div, prelude::*, px, uniform_list,
+    actions, AnyElement, ClickEvent, Context, CursorStyle, Entity, Focusable, FocusHandle,
+    MouseButton, MouseMoveEvent, MouseUpEvent, Subscription, Window, div, prelude::*, px,
+    uniform_list,
 };
 
 use crate::components::{button, empty_state, panel, section_header, PanelSide};
@@ -18,6 +19,7 @@ use crate::state::{
 };
 use crate::storage;
 use crate::terminal;
+use crate::text_input::{TextInput, TextInputEvent};
 use crate::theme::theme;
 
 actions!(
@@ -43,6 +45,8 @@ actions!(
 pub struct WorkspaceView {
     state: AppState,
     focus_handle: FocusHandle,
+    /// (repo_root, session_id, input entity, event subscription, blur subscription)
+    renaming_session: Option<(PathBuf, String, Entity<TextInput>, Subscription, Subscription)>,
 }
 
 impl WorkspaceView {
@@ -70,7 +74,11 @@ impl WorkspaceView {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window, cx);
 
-        let mut this = Self { state, focus_handle };
+        let mut this = Self {
+            state,
+            focus_handle,
+            renaming_session: None,
+        };
         if let Some(repo) = this.state.selected_repo.clone() {
             if let Some(session_id) = this.state.selected_session.clone() {
                 this.activate_session(repo, session_id, window, cx);
@@ -151,17 +159,6 @@ impl WorkspaceView {
         if let Some(session_id) = session_id {
             self.activate_session(repo_root, session_id, window, cx);
         }
-    }
-
-    fn on_select_session(
-        &mut self,
-        repo_root: PathBuf,
-        session_id: String,
-        _event: &MouseUpEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.activate_session(repo_root, session_id, window, cx);
     }
 
     fn on_add_session(
@@ -270,6 +267,75 @@ impl WorkspaceView {
             }
         }
 
+        self.persist_config();
+        cx.notify();
+    }
+
+    fn on_rename_session_start(
+        &mut self,
+        repo_root: PathBuf,
+        session_id: String,
+        current_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = cx.new(|cx| TextInput::new(current_name, window, cx));
+        let event_sub = cx.subscribe(&input, {
+            let repo_root = repo_root.clone();
+            let session_id = session_id.clone();
+            move |this, _input, event, cx| match event {
+                TextInputEvent::Confirm(new_name) => {
+                    this.on_rename_session_commit(
+                        repo_root.clone(),
+                        session_id.clone(),
+                        new_name.clone(),
+                        cx,
+                    );
+                }
+                TextInputEvent::Cancel => {
+                    this.renaming_session = None;
+                    cx.notify();
+                }
+            }
+        });
+        let blur_sub = cx.on_blur(
+            &input.read(cx).focus_handle(cx),
+            window,
+            move |this, _window, cx| {
+                // Commit on blur — the subscription/entity will still be alive at this point
+                if let Some((repo, sid, input_entity, _, _)) = this.renaming_session.take() {
+                    let new_name = input_entity.read(cx).text().trim().to_string();
+                    this.on_rename_session_commit(repo, sid, new_name, cx);
+                }
+            },
+        );
+        self.renaming_session = Some((repo_root, session_id, input, event_sub, blur_sub));
+        cx.notify();
+    }
+
+    fn on_rename_session_commit(
+        &mut self,
+        repo_root: PathBuf,
+        session_id: String,
+        new_name: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.renaming_session = None;
+        if new_name.is_empty() {
+            cx.notify();
+            return;
+        }
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        {
+            if let Some(session) = project.sessions.iter_mut().find(|s| s.id == session_id) {
+                session.name = new_name;
+            }
+        }
         self.persist_config();
         cx.notify();
     }
@@ -934,12 +1000,79 @@ impl WorkspaceView {
                                 let session_id = session.id.clone();
                                 let delete_repo = project.repo_root.clone();
                                 let delete_session_id = session.id.clone();
+                                let rename_repo = project.repo_root.clone();
+                                let rename_session_id = session.id.clone();
+                                let rename_session_name = session.name.clone();
                                 let is_session_selected = is_project_selected
                                     && selected_session.is_some_and(|s| s == &session.id);
+
+                                let is_renaming = self
+                                    .renaming_session
+                                    .as_ref()
+                                    .is_some_and(|(r, s, _, _, _)| {
+                                        r == &project.repo_root && s == &session.id
+                                    });
 
                                 let session_row_id = gpui::ElementId::Name(
                                     format!("sess-{}-{}", project.display_name, session.id).into(),
                                 );
+
+                                let name_content: AnyElement = if is_renaming {
+                                    let input = self
+                                        .renaming_session
+                                        .as_ref()
+                                        .unwrap()
+                                        .2
+                                        .clone();
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .child(input)
+                                        .into_any_element()
+                                } else {
+                                    div()
+                                        .id(gpui::ElementId::Name(
+                                            format!(
+                                                "sess-name-{}-{}",
+                                                project.display_name, session.id
+                                            )
+                                            .into(),
+                                        ))
+                                        .flex_1()
+                                        .min_w_0()
+                                        .cursor_pointer()
+                                        .on_click(cx.listener(
+                                            move |this, event: &ClickEvent, window, cx| {
+                                                if event.click_count() == 2 {
+                                                    this.on_rename_session_start(
+                                                        rename_repo.clone(),
+                                                        rename_session_id.clone(),
+                                                        rename_session_name.clone(),
+                                                        window,
+                                                        cx,
+                                                    );
+                                                } else if event.click_count() == 1 {
+                                                    this.activate_session(
+                                                        session_repo.clone(),
+                                                        session_id.clone(),
+                                                        window,
+                                                        cx,
+                                                    );
+                                                }
+                                            },
+                                        ))
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(if is_session_selected {
+                                                    t.accent
+                                                } else {
+                                                    t.text_secondary
+                                                })
+                                                .child(session.name.clone()),
+                                        )
+                                        .into_any_element()
+                                };
 
                                 container = container.child(
                                     div()
@@ -957,36 +1090,7 @@ impl WorkspaceView {
                                             t.transparent
                                         })
                                         .hover(|style| style.bg(t.hover_overlay))
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .cursor_pointer()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(
-                                                        move |this, event, window, cx| {
-                                                            this.on_select_session(
-                                                                session_repo.clone(),
-                                                                session_id.clone(),
-                                                                event,
-                                                                window,
-                                                                cx,
-                                                            )
-                                                        },
-                                                    ),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_sm()
-                                                        .text_color(if is_session_selected {
-                                                            t.accent
-                                                        } else {
-                                                            t.text_secondary
-                                                        })
-                                                        .child(session.name.clone()),
-                                                ),
-                                        )
+                                        .child(name_content)
                                         .child(
                                             div()
                                                 .id("delete-session-btn")

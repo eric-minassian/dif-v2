@@ -199,11 +199,31 @@ impl WorkspaceView {
         let t = theme();
         let is_busy = matches!(phase, ActionPhase::Working(_));
 
+        let auto_merge = self
+            .state
+            .selected_repo
+            .as_ref()
+            .and_then(|repo| {
+                self.state
+                    .config
+                    .projects
+                    .iter()
+                    .find(|p| &p.repo_root == repo)
+            })
+            .map(|p| p.settings.auto_merge)
+            .unwrap_or(false);
+
+        let rebase_label = if auto_merge {
+            "Auto Merge"
+        } else {
+            "Rebase & Merge"
+        };
+
         let (button_id, label, bg_color): (&str, &str, Hsla) = match action {
             PanelAction::Commit => ("action-commit", "Commit", t.accent_green),
             PanelAction::Amend => ("action-amend", "Amend", t.accent_green),
             PanelAction::CreatePR => ("action-create-pr", "Create PR", t.accent_green),
-            PanelAction::Rebase => ("action-rebase", "Rebase & Merge", t.accent_green),
+            PanelAction::Rebase => ("action-rebase", rebase_label, t.accent_green),
             PanelAction::CloseSession => ("action-close", "Close Session", t.accent_red),
             PanelAction::None => return div().into_any_element(),
         };

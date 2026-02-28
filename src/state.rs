@@ -19,6 +19,8 @@ pub struct ProjectSettings {
     pub workspace_init_commands: Vec<String>,
     #[serde(default)]
     pub enforce_conventional_commits: bool,
+    #[serde(default)]
+    pub auto_merge: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]

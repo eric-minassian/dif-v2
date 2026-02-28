@@ -420,6 +420,16 @@ impl WorkspaceView {
         if matches!(runtime.action_phase, ActionPhase::Working(_)) {
             return;
         }
+
+        let auto_merge = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo)
+            .map(|p| p.settings.auto_merge)
+            .unwrap_or(false);
+
         runtime.action_phase = ActionPhase::Working("Merging...".into());
         cx.notify();
 
@@ -441,7 +451,7 @@ impl WorkspaceView {
                     .background_executor()
                     .spawn({
                         let dir = dir.clone();
-                        async move { git::merge_pr_rebase(&dir) }
+                        async move { git::merge_pr_rebase(&dir, auto_merge) }
                     })
                     .await;
 

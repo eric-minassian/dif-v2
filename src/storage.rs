@@ -26,6 +26,10 @@ struct RawSavedProject {
 struct RawAppConfig {
     projects: Vec<RawSavedProject>,
     last_selected_repo: Option<PathBuf>,
+    #[serde(default)]
+    left_sidebar_width: Option<f32>,
+    #[serde(default)]
+    right_sidebar_width: Option<f32>,
 }
 
 pub fn load_config() -> Result<AppConfig> {
@@ -94,6 +98,8 @@ pub fn load_config() -> Result<AppConfig> {
     Ok(AppConfig {
         projects,
         last_selected_repo: raw.last_selected_repo,
+        left_sidebar_width: raw.left_sidebar_width,
+        right_sidebar_width: raw.right_sidebar_width,
     })
 }
 
@@ -144,6 +150,7 @@ mod tests {
                 },
             ],
             last_selected_repo: Some(PathBuf::from("/tmp/one")),
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&raw).unwrap();
@@ -188,6 +195,7 @@ mod tests {
                 })
                 .collect(),
             last_selected_repo: parsed.last_selected_repo,
+            ..Default::default()
         };
 
         assert_eq!(config.projects.len(), 1);
@@ -207,6 +215,7 @@ mod tests {
                 last_selected_session: None,
             }],
             last_selected_repo: None,
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&raw).unwrap();
@@ -251,6 +260,7 @@ mod tests {
                 })
                 .collect(),
             last_selected_repo: parsed.last_selected_repo,
+            ..Default::default()
         };
 
         assert_eq!(config.projects.len(), 1);

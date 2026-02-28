@@ -108,26 +108,6 @@ impl WorkspaceView {
         cx.notify();
     }
 
-    pub(crate) fn select_side_tab_by_index(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(repo) = self.state.selected_repo.as_ref() else {
-            return;
-        };
-        let Some(session_id) = self.state.selected_session.as_ref() else {
-            return;
-        };
-        let Some(project_runtime) = self.state.runtimes.get_mut(repo) else {
-            return;
-        };
-        let Some(session_runtime) = project_runtime.session_runtimes.get_mut(session_id) else {
-            return;
-        };
-
-        if let Some(tab) = session_runtime.side_tabs.get(index) {
-            session_runtime.selected_side_tab = Some(tab.id.clone());
-            cx.notify();
-        }
-    }
-
     pub(crate) fn render_side_terminal(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(session_runtime) = self.selected_session_runtime() else {
             return empty_state("Select a session to start terminals.").into_any_element();

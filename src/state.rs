@@ -234,6 +234,7 @@ pub struct AppState {
     pub resizing_sidebar: Option<ResizingSidebar>,
     pub update_status: UpdateStatus,
     pub checks_popover_open: bool,
+    pub cmd_held: bool,
 }
 
 #[derive(Clone, Copy, Debug)]

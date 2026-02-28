@@ -1,6 +1,7 @@
 use gpui::{AnyElement, Context, Hsla, MouseButton, div, prelude::*, px};
 
 use crate::components::{panel, section_header, PanelSide};
+use crate::icons::{icon_check, icon_x};
 use crate::state::{ActionPhase, BranchStatus, GitChange};
 use crate::theme::theme;
 
@@ -290,7 +291,7 @@ impl WorkspaceView {
                                 this.on_dismiss_action_error(cx);
                             }),
                         )
-                        .child("x"),
+                        .child(icon_x().size_3p5().text_color(t.text_dim)),
                 )
                 .into_any_element(),
         }
@@ -400,8 +401,7 @@ impl WorkspaceView {
                         el.bg(t.accent_green)
                             .border_color(t.accent_green)
                             .text_color(gpui::rgb(0x1e1e1e))
-                            .text_xs()
-                            .child("✓")
+                            .child(icon_check().size(px(10.)).text_color(gpui::rgb(0x1e1e1e)))
                     })
                     .when(!is_staged, |el| {
                         el.border_color(t.text_dim)

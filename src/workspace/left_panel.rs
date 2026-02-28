@@ -1,6 +1,7 @@
 use gpui::{AnyElement, ClickEvent, Context, MouseButton, div, prelude::*, px};
 
 use crate::components::{button, panel, section_header, PanelSide};
+use crate::icons::{icon_chevron_down, icon_chevron_right, icon_plus, icon_settings, icon_x};
 use crate::theme::theme;
 
 use super::WorkspaceView;
@@ -32,7 +33,11 @@ impl WorkspaceView {
                         let remove_repo = project.repo_root.clone();
                         let add_session_repo = project.repo_root.clone();
 
-                        let chevron = if is_collapsed { "▸" } else { "▾" };
+                        let chevron = if is_collapsed {
+                            icon_chevron_right().size_3().text_color(t.text_dim).into_any_element()
+                        } else {
+                            icon_chevron_down().size_3().text_color(t.text_dim).into_any_element()
+                        };
 
                         let project_row_id =
                             gpui::ElementId::Name(format!("proj-{}", project.display_name).into());
@@ -59,7 +64,6 @@ impl WorkspaceView {
                                 // Chevron
                                 .child(
                                     div()
-                                        .text_xs()
                                         .text_color(t.text_dim)
                                         .w(px(12.))
                                         .flex_shrink_0()
@@ -136,7 +140,6 @@ impl WorkspaceView {
                                                     .id("add-session-btn")
                                                     .cursor_pointer()
                                                     .px_1()
-                                                    .text_xs()
                                                     .text_color(t.text_dim)
                                                     .hover(|style| {
                                                         style.text_color(t.text_primary)
@@ -154,7 +157,7 @@ impl WorkspaceView {
                                                             },
                                                         ),
                                                     )
-                                                    .child("+"),
+                                                    .child(icon_plus().size_3p5().text_color(t.text_dim)),
                                             )
                                         })
                                         .child(
@@ -162,7 +165,6 @@ impl WorkspaceView {
                                                 .id("remove-project-btn")
                                                 .cursor_pointer()
                                                 .px_1()
-                                                .text_xs()
                                                 .text_color(t.text_dim)
                                                 .hover(|style| style.text_color(t.accent_red))
                                                 .on_mouse_up(
@@ -178,7 +180,7 @@ impl WorkspaceView {
                                                         },
                                                     ),
                                                 )
-                                                .child("×"),
+                                                .child(icon_x().size_3p5().text_color(t.text_dim)),
                                         ),
                                 ),
                         );
@@ -286,7 +288,6 @@ impl WorkspaceView {
                                                 .id("delete-session-btn")
                                                 .cursor_pointer()
                                                 .px_1()
-                                                .text_xs()
                                                 .text_color(t.text_dim)
                                                 .invisible()
                                                 .group_hover("session-row", |style| {
@@ -307,7 +308,7 @@ impl WorkspaceView {
                                                         },
                                                     ),
                                                 )
-                                                .child("×"),
+                                                .child(icon_x().size_3p5().text_color(t.text_dim)),
                                         ),
                                 );
                             }
@@ -327,8 +328,12 @@ impl WorkspaceView {
                     .border_color(t.border_default)
                     .child(
                         button()
+                            .flex()
+                            .items_center()
+                            .gap_1()
                             .text_xs()
-                            .child("+ Add")
+                            .child(icon_plus().size_3().text_color(t.text_primary))
+                            .child("Add")
                             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_add_project)),
                     )
                     .child(
@@ -336,7 +341,6 @@ impl WorkspaceView {
                             .id("settings-btn")
                             .cursor_pointer()
                             .px_1()
-                            .text_sm()
                             .text_color(t.text_dim)
                             .hover(|style| style.text_color(t.text_primary))
                             .on_mouse_up(
@@ -345,7 +349,7 @@ impl WorkspaceView {
                                     this.on_open_settings(cx);
                                 }),
                             )
-                            .child("⚙"),
+                            .child(icon_settings().size_3p5().text_color(t.text_dim)),
                     ),
             )
             .into_any_element()

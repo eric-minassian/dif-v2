@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
 
+use crate::icons::{icon_plus, icon_x};
 use crate::state::UpdateStatus;
 use crate::text_input::{TextInput, TextInputEvent};
 use crate::theme::theme;
@@ -138,7 +139,11 @@ impl WorkspaceView {
                             this.on_close_settings(cx);
                         }),
                     )
-                    .child("✕ Esc"),
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(icon_x().size_3().text_color(t.text_dim))
+                    .child("Esc"),
             );
 
         let mut content = div()
@@ -424,7 +429,7 @@ impl WorkspaceView {
                                             );
                                         }),
                                     )
-                                    .child("×"),
+                                    .child(icon_x().size_3p5().text_color(t.text_dim)),
                             ),
                     );
                 }
@@ -465,7 +470,11 @@ impl WorkspaceView {
                                 this.on_start_add_init_command(add_repo.clone(), window, cx);
                             }),
                         )
-                        .child("+ Add command"),
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(icon_plus().size_3().text_color(t.text_dim))
+                        .child("Add command"),
                 );
             }
 

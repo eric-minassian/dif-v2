@@ -63,6 +63,7 @@ pub fn load_config() -> Result<AppConfig> {
                     Some(SavedSession {
                         id: s.id?,
                         name: s.name.unwrap_or_else(|| "Session".to_string()),
+                        worktree_path: None,
                     })
                 })
                 .collect();
@@ -72,6 +73,7 @@ pub fn load_config() -> Result<AppConfig> {
                     vec![SavedSession {
                         id: "1".to_string(),
                         name: "Session 1".to_string(),
+                        worktree_path: None,
                     }],
                     Some("1".to_string()),
                 )
@@ -158,6 +160,7 @@ mod tests {
                             Some(SavedSession {
                                 id: s.id?,
                                 name: s.name.unwrap_or_default(),
+                                worktree_path: None,
                             })
                         })
                         .collect();
@@ -167,6 +170,7 @@ mod tests {
                             vec![SavedSession {
                                 id: "1".to_string(),
                                 name: "Session 1".to_string(),
+                                worktree_path: None,
                             }],
                             Some("1".to_string()),
                         )
@@ -219,6 +223,7 @@ mod tests {
                             Some(SavedSession {
                                 id: s.id?,
                                 name: s.name.unwrap_or_default(),
+                                worktree_path: None,
                             })
                         })
                         .collect();
@@ -228,6 +233,7 @@ mod tests {
                             vec![SavedSession {
                                 id: "1".to_string(),
                                 name: "Session 1".to_string(),
+                                worktree_path: None,
                             }],
                             Some("1".to_string()),
                         )

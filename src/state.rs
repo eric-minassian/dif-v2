@@ -9,6 +9,8 @@ use gpui_terminal::TerminalView;
 pub struct SavedSession {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -36,6 +38,7 @@ impl SavedProject {
             sessions: vec![SavedSession {
                 id: "1".to_string(),
                 name: "Session 1".to_string(),
+                worktree_path: None,
             }],
             last_selected_session: Some("1".to_string()),
         }

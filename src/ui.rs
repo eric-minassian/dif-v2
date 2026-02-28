@@ -87,6 +87,21 @@ impl WorkspaceView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Collect worktree paths before removing the project
+        let worktree_paths: Vec<PathBuf> = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo_root)
+            .map(|p| {
+                p.sessions
+                    .iter()
+                    .filter_map(|s| s.worktree_path.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let removed_selected = self
             .state
             .selected_repo
@@ -98,6 +113,10 @@ impl WorkspaceView {
             .projects
             .retain(|project| project.repo_root != repo_root);
         self.state.runtimes.remove(&repo_root);
+
+        for wt_path in worktree_paths {
+            git::remove_worktree(&repo_root, &wt_path);
+        }
 
         if removed_selected {
             self.state.selected_repo = pick_initial_selection(&self.state.config);
@@ -156,10 +175,32 @@ impl WorkspaceView {
 
         let new_id = project.next_session_id();
         let new_name = project.next_session_name();
+        let display_name = project.display_name.clone();
+
         project.sessions.push(SavedSession {
             id: new_id.clone(),
             name: new_name,
+            worktree_path: None,
         });
+
+        match git::create_worktree(&repo_root, &display_name, &new_id) {
+            Ok(wt_path) => {
+                if let Some(project) = self
+                    .state
+                    .config
+                    .projects
+                    .iter_mut()
+                    .find(|p| p.repo_root == repo_root)
+                {
+                    if let Some(session) = project.sessions.iter_mut().find(|s| s.id == new_id) {
+                        session.worktree_path = Some(wt_path);
+                    }
+                }
+            }
+            Err(error) => {
+                self.state.flash_error = Some(format!("Failed to create worktree: {error}"));
+            }
+        }
 
         self.activate_session(repo_root, new_id, window, cx);
     }
@@ -172,6 +213,16 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Grab worktree path before removing the session
+        let worktree_path = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo_root)
+            .and_then(|p| p.sessions.iter().find(|s| s.id == session_id))
+            .and_then(|s| s.worktree_path.clone());
+
         if let Some(runtime) = self.state.runtimes.get_mut(&repo_root) {
             runtime.session_runtimes.remove(&session_id);
         }
@@ -184,6 +235,10 @@ impl WorkspaceView {
             .find(|p| p.repo_root == repo_root)
         {
             project.sessions.retain(|s| s.id != session_id);
+        }
+
+        if let Some(wt_path) = worktree_path {
+            git::remove_worktree(&repo_root, &wt_path);
         }
 
         let was_selected = self
@@ -237,6 +292,8 @@ impl WorkspaceView {
             return;
         };
 
+        let working_dir = self.worktree_or_repo(&repo, &session_id);
+
         let Some(project_runtime) = self.state.runtimes.get_mut(&repo) else {
             return;
         };
@@ -244,7 +301,7 @@ impl WorkspaceView {
             return;
         };
 
-        match terminal::spawn_terminal(window, cx, &repo) {
+        match terminal::spawn_terminal(window, cx, &working_dir) {
             Ok(view) => {
                 let id = session_runtime.next_tab_id.to_string();
                 session_runtime.next_tab_id += 1;
@@ -303,6 +360,13 @@ impl WorkspaceView {
             return;
         };
 
+        let working_dir = self
+            .state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(&repo, sid))
+            .unwrap_or_else(|| repo.clone());
+
         let view = cx.entity().clone();
         let file_path_clone = file_path.clone();
         let status_code_clone = status_code.clone();
@@ -312,7 +376,7 @@ impl WorkspaceView {
                 let result = cx
                     .background_executor()
                     .spawn(async move {
-                        git::compute_file_diff(&repo, &file_path_clone, &status_code_clone)
+                        git::compute_file_diff(&working_dir, &file_path_clone, &status_code_clone)
                     })
                     .await;
 
@@ -399,8 +463,19 @@ impl WorkspaceView {
                     return;
                 }
 
-                let project = SavedProject::from_repo_root(repo_root.clone());
+                let mut project = SavedProject::from_repo_root(repo_root.clone());
                 let session_id = project.sessions[0].id.clone();
+
+                match git::create_worktree(&repo_root, &project.display_name, &session_id) {
+                    Ok(wt_path) => {
+                        project.sessions[0].worktree_path = Some(wt_path);
+                    }
+                    Err(error) => {
+                        self.state.flash_error =
+                            Some(format!("Failed to create worktree: {error}"));
+                    }
+                }
+
                 self.state.config.projects.push(project);
                 self.activate_session(repo_root, session_id, window, cx);
             }
@@ -438,6 +513,19 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    fn worktree_or_repo(&self, repo_root: &Path, session_id: &str) -> PathBuf {
+        self.state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root.as_path() == repo_root)
+            .and_then(|p| p.sessions.iter().find(|s| s.id == session_id))
+            .and_then(|s| s.worktree_path.as_ref())
+            .filter(|p| p.exists())
+            .cloned()
+            .unwrap_or_else(|| repo_root.to_path_buf())
+    }
+
     fn ensure_session_runtime(
         &mut self,
         repo_root: &Path,
@@ -451,15 +539,17 @@ impl WorkspaceView {
             }
         }
 
+        let working_dir = self.worktree_or_repo(repo_root, session_id);
+
         // Create main terminal
-        let (main_terminal, main_error) = match terminal::spawn_terminal(window, cx, repo_root) {
+        let (main_terminal, main_error) = match terminal::spawn_terminal(window, cx, &working_dir) {
             Ok(view) => (Some(view), None),
             Err(error) => (None, Some(error.to_string())),
         };
 
         // Create initial side terminal tab
-        let (side_tabs, selected_tab, next_id) = match terminal::spawn_terminal(window, cx, repo_root)
-        {
+        let (side_tabs, selected_tab, next_id) =
+            match terminal::spawn_terminal(window, cx, &working_dir) {
             Ok(view) => {
                 let tab = TerminalTab {
                     id: "1".to_string(),
@@ -498,13 +588,20 @@ impl WorkspaceView {
         let generation = self.state.git_poll_generation;
         let view = cx.entity().clone();
 
+        let git_dir = self
+            .state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(&repo_root, sid))
+            .unwrap_or_else(|| repo_root.clone());
+
         window
             .spawn(cx, async move |cx| {
                 loop {
-                    let repo = repo_root.clone();
+                    let dir = git_dir.clone();
                     let snapshot = cx
                         .background_executor()
-                        .spawn(async move { git::collect_changes(&repo) })
+                        .spawn(async move { git::collect_changes(&dir) })
                         .await;
 
                     let keep_running = cx

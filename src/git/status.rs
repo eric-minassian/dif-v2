@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::{gh, git};
-use crate::state::{BranchStatus, GitChange};
+use crate::state::{BranchStatus, CheckBucket, CiCheck, GitChange};
 
 pub fn collect_changes(repo_root: &Path) -> Result<Vec<GitChange>, String> {
     let output = Command::new(git())
@@ -179,15 +179,21 @@ pub fn commits_ahead_of_main(worktree: &Path) -> Result<u32, String> {
         .unwrap_or(0))
 }
 
-pub fn check_pr_status(worktree: &Path) -> Result<Option<(String, bool)>, String> {
+pub struct PrInfo {
+    pub url: String,
+    pub merged: bool,
+    pub number: Option<u32>,
+    pub state: Option<String>,
+}
+
+pub fn check_pr_status(worktree: &Path) -> Result<Option<PrInfo>, String> {
     let output = Command::new(gh())
         .current_dir(worktree)
-        .args(["pr", "view", "--json", "url,state"])
+        .args(["pr", "view", "--json", "url,state,number"])
         .output()
         .map_err(|e| format!("gh pr view failed: {e}"))?;
 
     if !output.status.success() {
-        // No PR exists for this branch
         return Ok(None);
     }
 
@@ -196,25 +202,83 @@ pub fn check_pr_status(worktree: &Path) -> Result<Option<(String, bool)>, String
         serde_json::from_str(text.trim()).map_err(|e| format!("failed to parse gh output: {e}"))?;
 
     let url = parsed["url"].as_str().unwrap_or_default().to_string();
-    let state = parsed["state"].as_str().unwrap_or_default();
+    let state = parsed["state"].as_str().unwrap_or_default().to_string();
     let merged = state == "MERGED";
+    let number = parsed["number"].as_u64().map(|n| n as u32);
 
     if url.is_empty() {
         return Ok(None);
     }
 
-    Ok(Some((url, merged)))
+    Ok(Some(PrInfo {
+        url,
+        merged,
+        number,
+        state: Some(state),
+    }))
+}
+
+pub fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
+    let output = match Command::new(gh())
+        .current_dir(worktree)
+        .args(["pr", "checks", "--json", "name,bucket,workflow,link"])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parsed: Vec<serde_json::Value> = match serde_json::from_str(text.trim()) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    parsed
+        .into_iter()
+        .map(|entry| {
+            let name = entry["name"].as_str().unwrap_or_default().to_string();
+            let bucket_str = entry["bucket"].as_str().unwrap_or_default();
+            let workflow = entry["workflow"].as_str().unwrap_or_default().to_string();
+            let link = entry["link"].as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
+
+            let bucket = match bucket_str {
+                "pass" => CheckBucket::Pass,
+                "fail" => CheckBucket::Fail,
+                "pending" => CheckBucket::Pending,
+                "skipping" => CheckBucket::Skipping,
+                _ => CheckBucket::Cancel,
+            };
+
+            CiCheck {
+                name,
+                bucket,
+                workflow,
+                link,
+            }
+        })
+        .collect()
 }
 
 pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
     let commits_ahead = commits_ahead_of_main(worktree).unwrap_or(0);
-    let (pr_url, pr_merged) = match check_pr_status(worktree) {
-        Ok(Some((url, merged))) => (Some(url), merged),
-        _ => (None, false),
+    let (pr_url, pr_merged, pr_number, pr_state) = match check_pr_status(worktree) {
+        Ok(Some(info)) => (Some(info.url), info.merged, info.number, info.state),
+        _ => (None, false, None, None),
     };
+
+    let checks = if pr_url.is_some() {
+        collect_pr_checks(worktree)
+    } else {
+        Vec::new()
+    };
+
     BranchStatus {
         commits_ahead,
         pr_url,
         pr_merged,
+        pr_number,
+        pr_state,
+        checks,
     }
 }

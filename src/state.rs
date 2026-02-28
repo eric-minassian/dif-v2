@@ -134,11 +134,31 @@ pub struct GitSnapshot {
     pub last_error: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum CheckBucket {
+    Pass,
+    Fail,
+    Pending,
+    Skipping,
+    Cancel,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CiCheck {
+    pub name: String,
+    pub bucket: CheckBucket,
+    pub workflow: String,
+    pub link: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BranchStatus {
     pub commits_ahead: u32,
     pub pr_url: Option<String>,
     pub pr_merged: bool,
+    pub pr_number: Option<u32>,
+    pub pr_state: Option<String>,
+    pub checks: Vec<CiCheck>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -213,6 +233,7 @@ pub struct AppState {
     pub collapsed_projects: HashSet<PathBuf>,
     pub resizing_sidebar: Option<ResizingSidebar>,
     pub update_status: UpdateStatus,
+    pub checks_popover_open: bool,
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -390,12 +390,14 @@ impl WorkspaceView {
                     })
                     .await;
 
-                cx.update(|_, cx| {
+                cx.update(|window, cx| {
                     view.update(cx, |this, cx| {
                         if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
                             match pr_result {
                                 Ok(_) => {
                                     rt.action_phase = ActionPhase::Idle;
+                                    // Restart poll so checks are fetched immediately
+                                    this.start_git_poll(repo_clone.clone(), window, cx);
                                 }
                                 Err(e) => {
                                     rt.action_phase = ActionPhase::Error(format!("PR: {e}"));
@@ -533,6 +535,10 @@ impl WorkspaceView {
 
                                 if let Some(status) = branch_status {
                                     if runtime.branch_status != status {
+                                        // Close popover when checks change so it doesn't show stale data
+                                        if runtime.branch_status.checks != status.checks {
+                                            this.state.checks_popover_open = false;
+                                        }
                                         runtime.branch_status = status;
                                         changed = true;
                                     }

@@ -38,3 +38,16 @@ pub fn icon_plus() -> Svg {
 pub fn icon_settings() -> Svg {
     icon("settings")
 }
+
+pub fn icon_circle_dot() -> Svg {
+    icon("circle_dot")
+}
+
+pub fn icon_external_link() -> Svg {
+    icon("external_link")
+}
+
+pub fn icon_minus() -> Svg {
+    icon("minus")
+}
+

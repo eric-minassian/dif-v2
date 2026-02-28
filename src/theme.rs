@@ -26,6 +26,8 @@ pub struct Theme {
     pub accent: Hsla,
     pub accent_green: Hsla,
     pub accent_red: Hsla,
+    pub accent_yellow: Hsla,
+    pub accent_purple: Hsla,
     pub diff_add_text: Hsla,
     pub diff_del_text: Hsla,
 
@@ -64,6 +66,8 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
     accent: gpui::rgb(0xd4d4d4).into(),
     accent_green: gpui::rgb(0x8ae234).into(),
     accent_red: gpui::rgb(0xef2929).into(),
+    accent_yellow: gpui::rgb(0xfce94f).into(),
+    accent_purple: gpui::rgb(0xa371f7).into(),
     diff_add_text: gpui::rgb(0x8ae234).into(),
     diff_del_text: gpui::rgb(0xef2929).into(),
 

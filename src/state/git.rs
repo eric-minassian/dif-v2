@@ -1,4 +1,26 @@
+use std::collections::HashSet;
 use std::time::Instant;
+
+#[derive(Clone, Debug)]
+pub struct SyntaxRun {
+    pub len: usize,
+    pub color: gpui::Hsla,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum DiffDisplayRow {
+    Line(usize),
+    Collapsed {
+        hidden_count: usize,
+        start_index: usize,
+    },
+    ExpandedHeader {
+        hidden_count: usize,
+        start_index: usize,
+    },
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GitChange {
@@ -16,6 +38,8 @@ pub struct SplitLine {
     pub old_text: String,
     pub new_text: String,
     pub kind: SplitLineKind,
+    pub old_syntax_runs: Vec<SyntaxRun>,
+    pub new_syntax_runs: Vec<SyntaxRun>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,6 +54,8 @@ pub enum SplitLineKind {
 pub struct DiffData {
     pub file_path: String,
     pub lines: Vec<SplitLine>,
+    pub display_rows: Vec<DiffDisplayRow>,
+    pub expanded_sections: HashSet<usize>,
     pub additions: u32,
     pub deletions: u32,
 }

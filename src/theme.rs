@@ -39,8 +39,10 @@ pub struct Theme {
     pub hover_overlay: Hsla,
     pub diff_add_bg: Hsla,
     pub diff_del_bg: Hsla,
+    pub diff_collapsed_bg: Hsla,
+    pub diff_collapsed_text: Hsla,
+    pub diff_collapsed_hover: Hsla,
     pub error_bg: Hsla,
-
 }
 
 static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
@@ -80,6 +82,9 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
     hover_overlay: gpui::rgba(0xffffff15).into(),
     diff_add_bg: gpui::rgba(0x4e9a0618).into(),
     diff_del_bg: gpui::rgba(0xcc000018).into(),
+    diff_collapsed_bg: gpui::rgba(0x58a6ff0c).into(),
+    diff_collapsed_text: gpui::rgb(0x58a6ff).into(),
+    diff_collapsed_hover: gpui::rgba(0x58a6ff18).into(),
     error_bg: gpui::rgba(0xef292930).into(),
 
 });

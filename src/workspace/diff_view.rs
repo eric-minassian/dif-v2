@@ -1,10 +1,15 @@
+use std::ops::Range;
 use std::rc::Rc;
 
-use gpui::{AnyElement, Context, MouseButton, MouseUpEvent, Window, div, prelude::*, px, uniform_list};
+use gpui::{
+    AnyElement, Context, FontStyle, FontWeight, HighlightStyle, MouseButton, MouseUpEvent,
+    SharedString, StyledText, Window, div, prelude::*, px, uniform_list,
+};
 
 use crate::git;
+use crate::git::diff::build_display_rows;
 use crate::icons::icon_x;
-use crate::state::{DiffData, SplitLine, SplitLineKind};
+use crate::state::{DiffData, DiffDisplayRow, SplitLine, SplitLineKind, SyntaxRun};
 use crate::theme::theme;
 
 use super::WorkspaceView;
@@ -59,6 +64,22 @@ impl WorkspaceView {
     pub(crate) fn on_close_diff(&mut self, cx: &mut Context<Self>) {
         self.state.viewing_diff = None;
         cx.notify();
+    }
+
+    fn on_expand_diff_section(&mut self, start_index: usize, cx: &mut Context<Self>) {
+        if let Some(diff) = &mut self.state.viewing_diff {
+            diff.expanded_sections.insert(start_index);
+            diff.display_rows = build_display_rows(&diff.lines, &diff.expanded_sections);
+            cx.notify();
+        }
+    }
+
+    fn on_collapse_diff_section(&mut self, start_index: usize, cx: &mut Context<Self>) {
+        if let Some(diff) = &mut self.state.viewing_diff {
+            diff.expanded_sections.remove(&start_index);
+            diff.display_rows = build_display_rows(&diff.lines, &diff.expanded_sections);
+            cx.notify();
+        }
     }
 
     pub(crate) fn render_diff_view(
@@ -144,13 +165,42 @@ impl WorkspaceView {
             );
 
         let lines = Rc::new(diff_data.lines.clone());
-        let line_count = lines.len();
+        let display_rows = Rc::new(diff_data.display_rows.clone());
+        let row_count = display_rows.len();
+        let entity = cx.entity().clone();
 
-        let diff_list = uniform_list("diff-lines", line_count, move |range, _window, _cx| {
-            range
-                .map(|ix| render_split_line(&lines[ix]))
-                .collect::<Vec<_>>()
-        })
+        let diff_list = uniform_list(
+            "diff-lines",
+            row_count,
+            move |range, _window, _cx| {
+                range
+                    .map(|ix| {
+                        let row = &display_rows[ix];
+                        match row {
+                            DiffDisplayRow::Line(line_idx) => {
+                                render_split_line(&lines[*line_idx])
+                            }
+                            DiffDisplayRow::Collapsed {
+                                hidden_count,
+                                start_index,
+                            } => render_collapsed_separator(
+                                *hidden_count,
+                                *start_index,
+                                &entity,
+                            ),
+                            DiffDisplayRow::ExpandedHeader {
+                                hidden_count,
+                                start_index,
+                            } => render_expanded_header(
+                                *hidden_count,
+                                *start_index,
+                                &entity,
+                            ),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
         .flex_1()
         .min_h_0()
         .bg(t.bg_base);
@@ -164,6 +214,40 @@ impl WorkspaceView {
             .child(header)
             .child(diff_list)
             .into_any_element()
+    }
+}
+
+fn syntax_runs_to_highlights(runs: &[SyntaxRun]) -> Vec<(Range<usize>, HighlightStyle)> {
+    let mut highlights = Vec::with_capacity(runs.len());
+    let mut offset = 0;
+    for run in runs {
+        let style = HighlightStyle {
+            color: Some(run.color),
+            font_weight: if run.bold {
+                Some(FontWeight::BOLD)
+            } else {
+                None
+            },
+            font_style: if run.italic {
+                Some(FontStyle::Italic)
+            } else {
+                None
+            },
+            ..Default::default()
+        };
+        highlights.push((offset..offset + run.len, style));
+        offset += run.len;
+    }
+    highlights
+}
+
+fn render_styled_text(text: &str, syntax_runs: &[SyntaxRun]) -> StyledText {
+    let shared = SharedString::from(text.to_string());
+    if syntax_runs.is_empty() {
+        StyledText::new(shared)
+    } else {
+        let highlights = syntax_runs_to_highlights(syntax_runs);
+        StyledText::new(shared).with_highlights(highlights)
     }
 }
 
@@ -185,6 +269,18 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
     let right_text_color = match line.kind {
         SplitLineKind::Insert | SplitLineKind::Replace => t.diff_add_text,
         _ => t.text_muted,
+    };
+
+    let old_content = if !line.old_text.is_empty() && !line.old_syntax_runs.is_empty() {
+        render_styled_text(&line.old_text, &line.old_syntax_runs)
+    } else {
+        StyledText::new(SharedString::from(line.old_text.clone()))
+    };
+
+    let new_content = if !line.new_text.is_empty() && !line.new_syntax_runs.is_empty() {
+        render_styled_text(&line.new_text, &line.new_syntax_runs)
+    } else {
+        StyledText::new(SharedString::from(line.new_text.clone()))
     };
 
     div()
@@ -222,7 +318,7 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
                         .truncate()
                         .px_1()
                         .text_color(left_text_color)
-                        .child(line.old_text.clone()),
+                        .child(old_content),
                 ),
         )
         .child(
@@ -259,8 +355,64 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
                         .truncate()
                         .px_1()
                         .text_color(right_text_color)
-                        .child(line.new_text.clone()),
+                        .child(new_content),
                 ),
         )
+        .into_any_element()
+}
+
+fn render_collapsed_separator(
+    hidden_count: usize,
+    start_index: usize,
+    entity: &gpui::Entity<WorkspaceView>,
+) -> AnyElement {
+    let t = theme();
+    let entity = entity.clone();
+
+    div()
+        .id(SharedString::from(format!("expand-{start_index}")))
+        .flex()
+        .w_full()
+        .text_xs()
+        .justify_center()
+        .items_center()
+        .cursor_pointer()
+        .bg(t.diff_collapsed_bg)
+        .text_color(t.diff_collapsed_text)
+        .hover(|style| style.bg(t.diff_collapsed_hover))
+        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+            entity.update(cx, |this, cx| {
+                this.on_expand_diff_section(start_index, cx);
+            });
+        })
+        .child(format!("Show {hidden_count} hidden lines"))
+        .into_any_element()
+}
+
+fn render_expanded_header(
+    hidden_count: usize,
+    start_index: usize,
+    entity: &gpui::Entity<WorkspaceView>,
+) -> AnyElement {
+    let t = theme();
+    let entity = entity.clone();
+
+    div()
+        .id(SharedString::from(format!("collapse-{start_index}")))
+        .flex()
+        .w_full()
+        .text_xs()
+        .justify_center()
+        .items_center()
+        .cursor_pointer()
+        .bg(t.diff_collapsed_bg)
+        .text_color(t.diff_collapsed_text)
+        .hover(|style| style.bg(t.diff_collapsed_hover))
+        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+            entity.update(cx, |this, cx| {
+                this.on_collapse_diff_section(start_index, cx);
+            });
+        })
+        .child(format!("Hide {hidden_count} lines"))
         .into_any_element()
 }

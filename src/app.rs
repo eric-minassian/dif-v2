@@ -5,10 +5,10 @@ use crate::storage;
 use crate::terminal_view::view::{Copy, Paste, SelectAll};
 use crate::text_input;
 use crate::workspace::{
-    CloseDiffView, CloseSideTab, HideApp, HideOtherApps, MinimizeWindow, NewSideTab, Quit,
-    RefreshGitStatus, SelectSession1, SelectSession2, SelectSession3, SelectSession4,
-    SelectSession5, SelectSession6, SelectSession7, SelectSession8, SelectSession9,
-    ToggleLeftSidebar, ToggleRightSidebar, WorkspaceView,
+    CloseDiffView, CloseSideTab, FocusTerminal, HideApp, HideOtherApps, MinimizeWindow,
+    NewSession, NewSideTab, OpenSettings, Quit, RefreshGitStatus, RunGitAction, SelectSession1,
+    SelectSession2, SelectSession3, SelectSession4, SelectSession5, SelectSession6, SelectSession7,
+    SelectSession8, SelectSession9, ToggleHelp, ToggleLeftSidebar, ToggleRightSidebar, WorkspaceView,
 };
 
 pub fn run() {
@@ -27,6 +27,11 @@ pub fn run() {
             KeyBinding::new("cmd-b", ToggleLeftSidebar, None),
             KeyBinding::new("cmd-shift-b", ToggleRightSidebar, None),
             KeyBinding::new("cmd-r", RefreshGitStatus, None),
+            KeyBinding::new("cmd-,", OpenSettings, None),
+            KeyBinding::new("cmd-n", NewSession, None),
+            KeyBinding::new("cmd-`", FocusTerminal, None),
+            KeyBinding::new("cmd-/", ToggleHelp, None),
+            KeyBinding::new("cmd-enter", RunGitAction, None),
             KeyBinding::new("cmd-1", SelectSession1, None),
             KeyBinding::new("cmd-2", SelectSession2, None),
             KeyBinding::new("cmd-3", SelectSession3, None),

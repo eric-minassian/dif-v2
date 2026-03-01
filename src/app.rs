@@ -1,9 +1,9 @@
 use gpui::{App, AppContext, Application, KeyBinding, TitlebarOptions, WindowOptions, point, px};
+
 use crate::assets::Assets;
+use crate::storage;
 use crate::terminal_view::view::{Copy, Paste, SelectAll};
 use crate::text_input;
-
-use crate::storage;
 use crate::workspace::{
     CloseDiffView, CloseSideTab, HideApp, HideOtherApps, MinimizeWindow, NewSideTab, Quit,
     RefreshGitStatus, SelectSession1, SelectSession2, SelectSession3, SelectSession4,

@@ -1,4 +1,5 @@
 mod commands;
+pub(crate) mod conventional;
 pub(crate) mod diff;
 mod repo;
 pub(crate) mod status;

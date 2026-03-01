@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use super::repo::home_dir;
 use super::{default_branch, run_git};
+use super::repo::home_dir;
 
 fn generate_short_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};

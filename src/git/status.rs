@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::{default_branch, run_git, run_git_raw, try_run_git, try_run_gh};
 use crate::state::{BranchStatus, CheckBucket, CiCheck, GitChange, RepoCapabilities};
+
+use super::{default_branch, run_git, run_git_raw, try_run_gh, try_run_git};
 
 pub fn collect_changes(repo_root: &Path) -> Result<Vec<GitChange>, String> {
     let (status_result, numstat) = std::thread::scope(|s| {

@@ -108,6 +108,49 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// Toggle focus between the main terminal and the active side terminal.
+    pub(crate) fn on_focus_terminal(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(session_runtime) = self.selected_session_runtime() else {
+            return;
+        };
+
+        // Collect the focus handles we need before mutably borrowing cx
+        let side_handle = session_runtime
+            .selected_side_tab
+            .as_ref()
+            .and_then(|tab_id| {
+                session_runtime
+                    .side_tabs
+                    .iter()
+                    .find(|t| t.id == *tab_id)
+            })
+            .map(|tab| tab.view.read(cx).focus_handle.clone());
+
+        let main_handle = session_runtime
+            .main_terminal
+            .as_ref()
+            .map(|main| main.read(cx).focus_handle.clone());
+
+        let side_focused = side_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(false);
+
+        if side_focused {
+            if let Some(handle) = main_handle {
+                handle.focus(window, cx);
+            }
+        } else {
+            if let Some(handle) = side_handle {
+                handle.focus(window, cx);
+            }
+        }
+    }
+
     pub(crate) fn render_side_terminal(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(session_runtime) = self.selected_session_runtime() else {
             return empty_state("Select a session to start terminals.").into_any_element();

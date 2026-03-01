@@ -4,6 +4,7 @@ mod commit_input;
 mod diff_view;
 mod git_actions;
 mod git_poll;
+mod help;
 mod helpers;
 mod left_panel;
 mod panel_action;
@@ -54,6 +55,11 @@ actions!(
         ToggleLeftSidebar,
         ToggleRightSidebar,
         RefreshGitStatus,
+        OpenSettings,
+        NewSession,
+        FocusTerminal,
+        ToggleHelp,
+        RunGitAction,
         Quit,
         HideApp,
         HideOtherApps,
@@ -291,6 +297,10 @@ impl WorkspaceView {
     }
 
     fn render_center(&self, cx: &mut Context<Self>) -> AnyElement {
+        if self.state.viewing_help {
+            return self.render_help_view(cx);
+        }
+
         if self.state.viewing_settings {
             return self.render_settings_view(cx);
         }
@@ -365,7 +375,10 @@ impl Render for WorkspaceView {
                 window.zoom_window();
             }))
             .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
-                if this.state.viewing_settings {
+                if this.state.viewing_help {
+                    this.state.viewing_help = false;
+                    cx.notify();
+                } else if this.state.viewing_settings {
                     this.on_close_settings(cx);
                 } else if this.state.viewing_diff.is_some() {
                     this.on_close_diff(cx);
@@ -408,6 +421,22 @@ impl Render for WorkspaceView {
             }))
             .on_action(cx.listener(|this, _: &SelectSession9, window, cx| {
                 this.select_session_by_index(8, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenSettings, _window, cx| {
+                this.on_open_settings(cx);
+            }))
+            .on_action(cx.listener(|this, _: &NewSession, window, cx| {
+                this.on_new_session(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FocusTerminal, window, cx| {
+                this.on_focus_terminal(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RunGitAction, window, cx| {
+                this.on_run_git_action(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleHelp, _window, cx| {
+                this.state.viewing_help = !this.state.viewing_help;
+                cx.notify();
             }))
             .on_modifiers_changed(cx.listener(
                 |this, event: &gpui::ModifiersChangedEvent, _window, cx| {

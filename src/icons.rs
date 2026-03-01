@@ -51,3 +51,7 @@ pub fn icon_minus() -> Svg {
     icon("minus")
 }
 
+pub fn icon_help_circle() -> Svg {
+    icon("help_circle")
+}
+

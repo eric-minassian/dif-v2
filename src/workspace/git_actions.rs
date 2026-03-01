@@ -2,11 +2,56 @@ use gpui::{Context, Window};
 
 use crate::git;
 use crate::git::conventional::is_conventional_commit;
-use crate::state::ActionPhase;
+use crate::state::{ActionPhase, CheckBucket};
 
+use super::panel_action::{derive_panel_action, PanelAction};
 use super::WorkspaceView;
 
 impl WorkspaceView {
+    /// Cmd+Enter: trigger the current git action based on state.
+    /// Mirrors the logic in `render_header_action_button` to pick the right action.
+    pub(crate) fn on_run_git_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.as_ref() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get(repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+
+        let has_changes = !runtime.git_snapshot.changes.is_empty();
+        let staged_count = runtime.staged_files.len();
+        let action = derive_panel_action(has_changes, staged_count, &runtime.branch_status);
+
+        match action {
+            PanelAction::Commit => self.on_commit(window, cx),
+            PanelAction::Amend => self.on_amend(window, cx),
+            PanelAction::CreatePR => self.on_create_pr(window, cx),
+            PanelAction::Rebase => {
+                let checks = &runtime.branch_status.checks;
+                let all_checks_pass = !checks.is_empty()
+                    && checks
+                        .iter()
+                        .all(|c| matches!(c.bucket, CheckBucket::Pass | CheckBucket::Skipping));
+                let auto_merge_enabled = runtime.branch_status.auto_merge_enabled;
+
+                if auto_merge_enabled {
+                    // Auto-merge is on → toggle it off
+                    self.on_toggle_pr_auto_merge(window, cx);
+                } else if !all_checks_pass && runtime.repo_capabilities.auto_merge_allowed {
+                    // Checks pending/failing, repo supports auto-merge → enable it
+                    self.on_toggle_pr_auto_merge(window, cx);
+                } else if runtime.repo_capabilities.rebase_merge_allowed {
+                    // All checks pass (or no checks), repo allows rebase → rebase & merge
+                    self.on_rebase(window, cx);
+                }
+            }
+            PanelAction::CloseSession | PanelAction::None => {}
+        }
+    }
+
     pub(crate) fn on_refresh_git_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(repo) = self.state.selected_repo.clone() {
             self.start_git_poll(repo, window, cx);

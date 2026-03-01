@@ -89,4 +89,5 @@ pub struct AppState {
     pub update_status: UpdateStatus,
     pub checks_popover_open: bool,
     pub cmd_held: bool,
+    pub viewing_help: bool,
 }

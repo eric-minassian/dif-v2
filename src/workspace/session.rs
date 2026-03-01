@@ -196,6 +196,58 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// Cmd+N: create a new session in the currently selected project.
+    pub(crate) fn on_new_session(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo_root) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter_mut()
+            .find(|p| p.repo_root == repo_root)
+        else {
+            return;
+        };
+
+        let new_id = project.next_session_id();
+        let new_name = project.next_session_name();
+        let display_name = project.display_name.clone();
+
+        project.sessions.push(SavedSession {
+            id: new_id.clone(),
+            name: new_name,
+            worktree_path: None,
+        });
+
+        match git::create_worktree(&repo_root, &display_name, &new_id) {
+            Ok(wt_path) => {
+                self.run_init_commands(&repo_root, &wt_path);
+                if let Some(project) = self
+                    .state
+                    .config
+                    .projects
+                    .iter_mut()
+                    .find(|p| p.repo_root == repo_root)
+                {
+                    if let Some(session) = project.sessions.iter_mut().find(|s| s.id == new_id) {
+                        session.worktree_path = Some(wt_path);
+                    }
+                }
+            }
+            Err(error) => {
+                self.state.flash_error = Some(format!("Failed to create worktree: {error}"));
+            }
+        }
+
+        self.activate_session(repo_root, new_id, window, cx);
+    }
+
     pub(crate) fn on_close_session(
         &mut self,
         _event: &MouseUpEvent,

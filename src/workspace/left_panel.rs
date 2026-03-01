@@ -1,7 +1,7 @@
 use gpui::{AnyElement, ClickEvent, Context, MouseButton, div, prelude::*, px};
 
 use crate::components::{button, panel, section_header, PanelSide};
-use crate::icons::{icon_chevron_down, icon_chevron_right, icon_plus, icon_settings, icon_x};
+use crate::icons::{icon_chevron_down, icon_chevron_right, icon_help_circle, icon_plus, icon_settings, icon_x};
 use crate::theme::theme;
 
 use super::WorkspaceView;
@@ -367,18 +367,40 @@ impl WorkspaceView {
                     )
                     .child(
                         div()
-                            .id("settings-btn")
-                            .cursor_pointer()
-                            .px_1()
-                            .text_color(t.text_dim)
-                            .hover(|style| style.text_color(t.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, _window, cx| {
-                                    this.on_open_settings(cx);
-                                }),
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .id("help-btn")
+                                    .cursor_pointer()
+                                    .px_1()
+                                    .text_color(t.text_dim)
+                                    .hover(|style| style.text_color(t.text_primary))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _event, _window, cx| {
+                                            this.state.viewing_help = !this.state.viewing_help;
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .child(icon_help_circle().size_3p5().text_color(t.text_dim)),
                             )
-                            .child(icon_settings().size_3p5().text_color(t.text_dim)),
+                            .child(
+                                div()
+                                    .id("settings-btn")
+                                    .cursor_pointer()
+                                    .px_1()
+                                    .text_color(t.text_dim)
+                                    .hover(|style| style.text_color(t.text_primary))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _event, _window, cx| {
+                                            this.on_open_settings(cx);
+                                        }),
+                                    )
+                                    .child(icon_settings().size_3p5().text_color(t.text_dim)),
+                            ),
                     ),
             )
             .into_any_element()

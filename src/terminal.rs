@@ -49,6 +49,9 @@ fn spawn_terminal_inner<T: 'static>(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "dif");
+    if std::env::var("LANG").is_err() {
+        cmd.env("LANG", "en_US.UTF-8");
+    }
 
     let mut child = pty_pair
         .slave

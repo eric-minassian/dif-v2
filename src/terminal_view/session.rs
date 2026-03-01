@@ -2,6 +2,25 @@ use ghostty_vt::{Error, Rgb, Terminal};
 
 use super::TerminalConfig;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CursorShape {
+    #[default]
+    Bar,
+    Block,
+    Underline,
+}
+
+impl CursorShape {
+    fn from_decscusr(ps: u8) -> Self {
+        match ps {
+            1 | 2 => Self::Block,
+            3 | 4 => Self::Underline,
+            5 | 6 => Self::Bar,
+            _ => Self::Bar,
+        }
+    }
+}
+
 pub struct TerminalSession {
     config: TerminalConfig,
     terminal: Terminal,
@@ -10,11 +29,14 @@ pub struct TerminalSession {
     mouse_button_event_enabled: bool,
     mouse_any_event_enabled: bool,
     mouse_sgr_enabled: bool,
+    focus_events_enabled: bool,
+    cursor_shape: CursorShape,
     title: Option<String>,
     clipboard_write: Option<String>,
     parse_tail: Vec<u8>,
     dsr_state: DsrScanState,
     osc_query_state: OscQueryScanState,
+    decscusr_state: DecscusrScanState,
 }
 
 impl TerminalSession {
@@ -29,11 +51,14 @@ impl TerminalSession {
             mouse_button_event_enabled: false,
             mouse_any_event_enabled: false,
             mouse_sgr_enabled: false,
+            focus_events_enabled: false,
+            cursor_shape: CursorShape::default(),
             title: None,
             clipboard_write: None,
             parse_tail: Vec::new(),
             dsr_state: DsrScanState::default(),
             osc_query_state: OscQueryScanState::default(),
+            decscusr_state: DecscusrScanState::default(),
         })
     }
 
@@ -75,6 +100,14 @@ impl TerminalSession {
         self.mouse_any_event_enabled
     }
 
+    pub fn focus_events_enabled(&self) -> bool {
+        self.focus_events_enabled
+    }
+
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.cursor_shape
+    }
+
     pub fn title(&self) -> Option<&str> {
         self.title.as_deref()
     }
@@ -92,6 +125,12 @@ impl TerminalSession {
     }
 
     fn update_state_from_output(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            if let Some(shape_code) = self.decscusr_state.advance(b) {
+                self.cursor_shape = CursorShape::from_decscusr(shape_code);
+            }
+        }
+
         const TAIL_LIMIT: usize = 2048;
 
         self.parse_tail.extend_from_slice(bytes);
@@ -146,6 +185,7 @@ impl TerminalSession {
                             1002 => self.mouse_button_event_enabled = enabled,
                             1003 => self.mouse_any_event_enabled = enabled,
                             1006 => self.mouse_sgr_enabled = enabled,
+                            1004 => self.focus_events_enabled = enabled,
                             _ => {}
                         }
                     }
@@ -271,6 +311,14 @@ impl TerminalSession {
                         let resp = format!("\x1b[{};{}R", row, col);
                         send(resp.as_bytes());
                     }
+                    TerminalQuery::PrimaryDeviceAttributes => {
+                        // VT220 (62) with ANSI color (22)
+                        send(b"\x1b[?62;22c");
+                    }
+                    TerminalQuery::SecondaryDeviceAttributes => {
+                        // VT100 family (1), version 100, no hardware option (0)
+                        send(b"\x1b[>1;100;0c");
+                    }
                 }
             }
 
@@ -349,6 +397,8 @@ impl TerminalSession {
 enum TerminalQuery {
     DeviceStatus,
     CursorPosition,
+    PrimaryDeviceAttributes,
+    SecondaryDeviceAttributes,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -377,10 +427,13 @@ enum DsrScanState {
     Esc,
     Csi,
     CsiQ,
+    CsiGt,
     Csi5,
     CsiQ5,
     Csi6,
     CsiQ6,
+    CsiZero,
+    CsiGtZero,
 }
 
 impl DsrScanState {
@@ -390,6 +443,10 @@ impl DsrScanState {
         let matched = match (*self, b) {
             (Csi5, b'n') | (CsiQ5, b'n') => Some(TerminalQuery::DeviceStatus),
             (Csi6, b'n') | (CsiQ6, b'n') => Some(TerminalQuery::CursorPosition),
+            (Csi, b'c') | (CsiZero, b'c') => Some(TerminalQuery::PrimaryDeviceAttributes),
+            (CsiGt, b'c') | (CsiGtZero, b'c') => {
+                Some(TerminalQuery::SecondaryDeviceAttributes)
+            }
             _ => None,
         };
 
@@ -397,10 +454,15 @@ impl DsrScanState {
             (_, 0x1b) => Esc,
             (Esc, b'[') => Csi,
             (Csi, b'?') => CsiQ,
+            (Csi, b'>') => CsiGt,
             (Csi, b'5') => Csi5,
             (CsiQ, b'5') => CsiQ5,
             (Csi, b'6') => Csi6,
             (CsiQ, b'6') => CsiQ6,
+            (Csi, b'0') => CsiZero,
+            (CsiGt, b'0') => CsiGtZero,
+            (Csi, b'c') | (CsiZero, b'c') => Idle,
+            (CsiGt, b'c') | (CsiGtZero, b'c') => Idle,
             (Csi5, b'n') => Idle,
             (CsiQ5, b'n') => Idle,
             (Csi6, b'n') => Idle,
@@ -480,6 +542,39 @@ fn value_to_after_semicolon_state(ps: u32) -> OscQueryScanState {
     match ps {
         10 | 11 => OscQueryScanState::AfterSemicolon { ps },
         _ => OscQueryScanState::Idle,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+enum DecscusrScanState {
+    #[default]
+    Idle,
+    Esc,
+    Csi,
+    Ps(u8),
+    Space(u8),
+}
+
+impl DecscusrScanState {
+    fn advance(&mut self, b: u8) -> Option<u8> {
+        let matched = match (*self, b) {
+            (Self::Space(value), b'q') => Some(value),
+            _ => None,
+        };
+
+        *self = match (*self, b) {
+            (_, 0x1b) => Self::Esc,
+            (Self::Esc, b'[') => Self::Csi,
+            (Self::Csi, d) if d.is_ascii_digit() => Self::Ps(d - b'0'),
+            (Self::Ps(v), d) if d.is_ascii_digit() => {
+                Self::Ps(v.saturating_mul(10).saturating_add(d - b'0'))
+            }
+            (Self::Csi, b' ') => Self::Space(0),
+            (Self::Ps(v), b' ') => Self::Space(v),
+            _ => Self::Idle,
+        };
+
+        matched
     }
 }
 

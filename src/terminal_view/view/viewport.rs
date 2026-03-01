@@ -256,6 +256,9 @@ impl TerminalView {
     }
 
     pub fn resize_terminal(&mut self, cols: u16, rows: u16, cx: &mut Context<Self>) {
+        if cols == self.session.cols() && rows == self.session.rows() {
+            return;
+        }
         let _ = self.session.resize(cols, rows);
         self.sync_viewport_scroll_tracking();
         self.pending_refresh = true;

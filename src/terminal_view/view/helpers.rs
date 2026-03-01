@@ -42,7 +42,18 @@ pub(crate) fn ctrl_byte_for_keystroke(keystroke: &gpui::Keystroke) -> Option<u8>
     } else if b.is_ascii_uppercase() {
         Some(b - b'A' + 1)
     } else {
-        None
+        // Special Ctrl combinations not in the @.._ or a..z ranges
+        match b {
+            b'/' => Some(0x1f), // Ctrl+/
+            b'2' => Some(0x00), // Ctrl+2 (NUL)
+            b'3' => Some(0x1b), // Ctrl+3 (ESC)
+            b'4' => Some(0x1c), // Ctrl+4 (FS)
+            b'5' => Some(0x1d), // Ctrl+5 (GS)
+            b'6' => Some(0x1e), // Ctrl+6 (RS)
+            b'7' => Some(0x1f), // Ctrl+7 (US)
+            b'8' => Some(0x7f), // Ctrl+8 (DEL)
+            _ => None,
+        }
     }
 }
 
@@ -82,6 +93,15 @@ pub(crate) fn window_position_to_local(
 pub(crate) fn sgr_mouse_sequence(button_value: u8, col: u16, row: u16, pressed: bool) -> String {
     let suffix = if pressed { 'M' } else { 'm' };
     format!("\x1b[<{};{};{}{}", button_value, col, row, suffix)
+}
+
+/// Normal (X10) mouse encoding: ESC [ M Cb Cx Cy
+/// Values are offset by 32. Coordinates capped at 223 (255-32).
+pub(crate) fn normal_mouse_sequence(button_value: u8, col: u16, row: u16) -> Vec<u8> {
+    let cb = button_value.saturating_add(32);
+    let cx = (col.min(223) as u8).saturating_add(32);
+    let cy = (row.min(223) as u8).saturating_add(32);
+    vec![0x1b, b'[', b'M', cb, cx, cy]
 }
 
 pub(crate) fn byte_index_for_column_in_line(line: &str, col: u16) -> usize {

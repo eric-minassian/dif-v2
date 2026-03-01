@@ -435,20 +435,35 @@ impl Element for TerminalTextElement {
             let view = self.view.read(cx);
             view.focus_handle
                 .is_focused(window)
-                .then(|| view.session.cursor_position())
+                .then(|| {
+                    let pos = view.session.cursor_position()?;
+                    let shape = view.session.cursor_shape();
+                    Some((pos, shape))
+                })
                 .flatten()
         }
-        .and_then(|(col, row)| {
+        .and_then(|((col, row), cursor_shape)| {
             let background = { self.view.read(cx).session.default_background() };
-            let cursor_color = cursor_color_for_background(background);
+            let mut cursor_color = cursor_color_for_background(background);
             let y = bounds.top() + line_height * (row.saturating_sub(1)) as f32;
             let row_index = row.saturating_sub(1) as usize;
             let line = shaped_lines.get(row_index)?;
             let byte_index = byte_index_for_column_in_line(line.text.as_str(), col);
             let x = bounds.left() + line.x_for_index(byte_index.min(line.text.len()));
+            let (cw, _) = cell_metrics(window, &font)?;
+
+            use super::super::CursorShape;
+            let (cursor_w, cursor_h, cursor_y) = match cursor_shape {
+                CursorShape::Block => {
+                    cursor_color.a = 0.4;
+                    (px(cw), line_height, y)
+                }
+                CursorShape::Underline => (px(cw), px(2.0), y + line_height - px(2.0)),
+                CursorShape::Bar => (px(2.0), line_height, y),
+            };
 
             Some(fill(
-                Bounds::new(point(x, y), size(px(2.0), line_height)),
+                Bounds::new(point(x, cursor_y), size(cursor_w, cursor_h)),
                 cursor_color,
             ))
         });

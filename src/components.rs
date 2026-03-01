@@ -28,7 +28,13 @@ pub fn section_header(title: &str) -> Div {
         .py_2()
         .border_b_1()
         .border_color(t.border_default)
-        .child(div().font_weight(gpui::FontWeight::BOLD).child(title.to_string()))
+        .child(
+            div()
+                .text_xs()
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(t.text_muted)
+                .child(title.to_uppercase()),
+        )
 }
 
 pub fn panel(side: PanelSide) -> Div {
@@ -55,6 +61,7 @@ pub fn empty_state(message: &str) -> Div {
         .items_center()
         .justify_center()
         .bg(t.bg_base)
+        .text_sm()
         .text_color(t.text_muted)
         .child(
             div()

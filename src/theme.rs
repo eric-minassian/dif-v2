@@ -24,6 +24,7 @@ pub struct Theme {
 
     // Accents
     pub accent: Hsla,
+    pub accent_blue: Hsla,
     pub accent_green: Hsla,
     pub accent_red: Hsla,
     pub accent_yellow: Hsla,
@@ -64,6 +65,7 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
 
     // Accents — using terminal ANSI palette
     accent: gpui::rgb(0xd4d4d4).into(),
+    accent_blue: gpui::rgb(0x58a6ff).into(),
     accent_green: gpui::rgb(0x8ae234).into(),
     accent_red: gpui::rgb(0xef2929).into(),
     accent_yellow: gpui::rgb(0xfce94f).into(),
@@ -73,9 +75,9 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
 
     // Alpha / overlays — neutral gray tints
     transparent: gpui::rgba(0x00000000).into(),
-    selection_faint: gpui::rgba(0xffffff10).into(),
-    selection_medium: gpui::rgba(0xffffff22).into(),
-    hover_overlay: gpui::rgba(0xffffff0c).into(),
+    selection_faint: gpui::rgba(0xffffff18).into(),
+    selection_medium: gpui::rgba(0xffffff28).into(),
+    hover_overlay: gpui::rgba(0xffffff15).into(),
     diff_add_bg: gpui::rgba(0x4e9a0618).into(),
     diff_del_bg: gpui::rgba(0xcc000018).into(),
     error_bg: gpui::rgba(0xef292930).into(),

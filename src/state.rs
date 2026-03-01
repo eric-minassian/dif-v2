@@ -173,6 +173,7 @@ pub struct BranchStatus {
     pub pr_state: Option<String>,
     pub checks: Vec<CiCheck>,
     pub auto_merge_enabled: bool,
+    pub branch_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]

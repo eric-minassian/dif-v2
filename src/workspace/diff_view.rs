@@ -78,20 +78,38 @@ impl WorkspaceView {
             .items_center()
             .justify_between()
             .px_3()
-            .py_1()
+            .py(px(6.))
             .bg(t.bg_panel)
             .border_b_1()
             .border_color(t.border_default)
-            .child(
+            .child({
+                let (dir_part, file_part) = match diff_data.file_path.rfind('/') {
+                    Some(pos) => (
+                        Some(diff_data.file_path[..=pos].to_string()),
+                        diff_data.file_path[pos + 1..].to_string(),
+                    ),
+                    None => (None, diff_data.file_path.clone()),
+                };
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
-                    .text_sm()
                     .child(
                         div()
-                            .text_color(t.text_secondary)
-                            .child(diff_data.file_path.clone()),
+                            .flex()
+                            .text_sm()
+                            .when_some(dir_part, |el, dir| {
+                                el.child(
+                                    div()
+                                        .text_color(t.text_dim)
+                                        .child(dir),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .text_color(t.text_primary)
+                                    .child(file_part),
+                            ),
                     )
                     .child(
                         div()
@@ -104,17 +122,19 @@ impl WorkspaceView {
                             .text_xs()
                             .text_color(t.accent_red)
                             .child(format!("-{}", diff_data.deletions)),
-                    ),
-            )
+                    )
+            })
             .child(
                 div()
                     .id("close-diff")
                     .cursor_pointer()
                     .px_2()
                     .py_1()
+                    .rounded_sm()
                     .text_xs()
-                    .text_color(t.text_dim)
-                    .hover(|style| style.text_color(t.text_primary))
+                    .bg(t.bg_elevated)
+                    .text_color(t.text_muted)
+                    .hover(|style| style.bg(t.bg_elevated_hover).text_color(t.text_primary))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _event, _window, cx| {
@@ -124,7 +144,7 @@ impl WorkspaceView {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(icon_x().size_3().text_color(t.text_dim))
+                    .child(icon_x().size_3().text_color(t.text_muted))
                     .child("Esc"),
             );
 
@@ -164,12 +184,12 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
 
     let left_text_color = match line.kind {
         SplitLineKind::Delete | SplitLineKind::Replace => t.diff_del_text,
-        _ => t.text_secondary,
+        _ => t.text_muted,
     };
 
     let right_text_color = match line.kind {
         SplitLineKind::Insert | SplitLineKind::Replace => t.diff_add_text,
-        _ => t.text_secondary,
+        _ => t.text_muted,
     };
 
     div()
@@ -191,6 +211,8 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
                         .flex_shrink_0()
                         .text_right()
                         .px_1()
+                        .border_r_1()
+                        .border_color(t.border_subtle)
                         .text_color(t.text_line_number)
                         .child(
                             line.old_lineno
@@ -226,6 +248,8 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
                         .flex_shrink_0()
                         .text_right()
                         .px_1()
+                        .border_r_1()
+                        .border_color(t.border_subtle)
                         .text_color(t.text_line_number)
                         .child(
                             line.new_lineno

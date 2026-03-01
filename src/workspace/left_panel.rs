@@ -60,6 +60,9 @@ impl WorkspaceView {
                                 } else {
                                     t.transparent
                                 })
+                                .when(is_project_selected, |el| {
+                                    el.border_l_2().border_color(t.accent_blue)
+                                })
                                 .hover(|style| style.bg(t.hover_overlay))
                                 // Chevron
                                 .child(
@@ -116,7 +119,14 @@ impl WorkspaceView {
                                                 .text_color(t.text_dim)
                                                 .overflow_hidden()
                                                 .child(if project.last_known_valid {
-                                                    project.repo_root.display().to_string()
+                                                    // Show last 2 path segments for brevity
+                                                    let components: Vec<_> = project.repo_root.components().collect();
+                                                    if components.len() > 2 {
+                                                        let tail: std::path::PathBuf = components[components.len()-2..].iter().collect();
+                                                        format!(".../{}", tail.display())
+                                                    } else {
+                                                        project.repo_root.display().to_string()
+                                                    }
                                                 } else {
                                                     format!(
                                                         "Missing: {}",
@@ -257,7 +267,7 @@ impl WorkspaceView {
                                             div()
                                                 .text_sm()
                                                 .text_color(if is_session_selected {
-                                                    t.accent
+                                                    t.text_primary
                                                 } else {
                                                     t.text_secondary
                                                 })
@@ -279,11 +289,14 @@ impl WorkspaceView {
                                         .justify_between()
                                         .pl(px(28.))
                                         .pr_3()
-                                        .py_1()
+                                        .py(px(6.))
                                         .bg(if is_session_selected {
                                             t.selection_medium
                                         } else {
                                             t.transparent
+                                        })
+                                        .when(is_session_selected, |el| {
+                                            el.border_l_2().border_color(t.accent_blue)
                                         })
                                         .hover(|style| style.bg(t.hover_overlay))
                                         .when(show_badge, |el| {
@@ -338,8 +351,10 @@ impl WorkspaceView {
                     .justify_between()
                     .px_3()
                     .py_2()
+                    .flex_shrink_0()
                     .border_t_1()
                     .border_color(t.border_default)
+                    .bg(t.bg_surface)
                     .child(
                         button()
                             .flex()

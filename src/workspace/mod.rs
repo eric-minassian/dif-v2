@@ -19,6 +19,7 @@ use gpui::{
 };
 
 use crate::components::empty_state;
+use crate::icons::icon_x;
 use crate::state::{
     AppConfig, AppState, ProjectRuntime, ResizingSidebar, SessionRuntime, TerminalTab,
     DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH,
@@ -234,16 +235,42 @@ impl WorkspaceView {
         project_runtime.session_runtimes.get(session_id)
     }
 
-    fn flash_banner(&self) -> Option<AnyElement> {
+    fn flash_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let t = theme();
         self.state.flash_error.as_ref().map(|message| {
             div()
+                .id("flash-banner")
                 .w_full()
                 .px_3()
                 .py_2()
                 .bg(t.error_bg)
-                .text_color(t.text_primary)
-                .child(message.clone())
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_xs()
+                        .text_color(t.text_primary)
+                        .child(message.clone()),
+                )
+                .child(
+                    div()
+                        .id("dismiss-flash")
+                        .cursor_pointer()
+                        .px_1()
+                        .text_color(t.text_dim)
+                        .hover(|s| s.text_color(t.text_primary))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _event, _window, cx| {
+                                this.state.flash_error = None;
+                                cx.notify();
+                            }),
+                        )
+                        .child(icon_x().size_3p5().text_color(t.text_dim)),
+                )
                 .into_any_element()
         })
     }
@@ -288,7 +315,7 @@ impl WorkspaceView {
 }
 
 impl Render for WorkspaceView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
 
         let left = if self.state.left_sidebar_collapsed {
@@ -300,7 +327,7 @@ impl Render for WorkspaceView {
         let right = if self.state.right_sidebar_collapsed {
             self.render_collapsed_right_sidebar()
         } else {
-            self.render_right_sidebar(cx)
+            self.render_right_sidebar(window, cx)
         };
 
         let is_resizing = self.state.resizing_sidebar.is_some();
@@ -385,7 +412,7 @@ impl Render for WorkspaceView {
             .bg(t.bg_base)
             .text_color(t.text_primary)
             .child(self.render_titlebar(cx))
-            .children(self.flash_banner())
+            .children(self.flash_banner(cx))
             .child(
                 div()
                     .flex_1()

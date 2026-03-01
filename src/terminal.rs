@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use anyhow::{Context as AnyhowContext, Result};
 use gpui::{AppContext, Context, Entity, Window};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
 use crate::terminal_view::view::{TerminalInput, TerminalView};
 use crate::terminal_view::{TerminalConfig, TerminalSession};
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 pub fn spawn_terminal<T: 'static>(
     window: &mut Window,

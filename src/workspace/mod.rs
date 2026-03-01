@@ -1,7 +1,12 @@
+mod changes_list;
+mod checks_popover;
+mod commit_input;
 mod diff_view;
 mod git_actions;
+mod git_poll;
 mod helpers;
 mod left_panel;
+mod panel_action;
 mod project;
 mod right_panel;
 mod session;

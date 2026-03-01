@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use super::repo::get_branch_name;
 use super::{run_gh, run_git, run_git_raw};
+use super::repo::get_branch_name;
 
 /// Stage the given files in the worktree.
 fn stage_files(worktree: &Path, files: &[String]) -> Result<(), String> {

@@ -2,8 +2,9 @@ use std::path::Path;
 
 use similar::TextDiff;
 
-use super::try_run_git;
 use crate::state::{DiffData, SplitLine, SplitLineKind};
+
+use super::try_run_git;
 
 /// Get the committed (HEAD) version of a file from git.
 fn get_base_content(repo_root: &Path, file_path: &str) -> Option<String> {

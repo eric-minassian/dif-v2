@@ -1,26 +1,14 @@
 use std::path::Path;
-use std::process::Command;
 
 use similar::TextDiff;
 
-use super::git;
-
+use super::try_run_git;
 use crate::state::{DiffData, SplitLine, SplitLineKind};
 
 /// Get the committed (HEAD) version of a file from git.
 fn get_base_content(repo_root: &Path, file_path: &str) -> Option<String> {
-    let output = Command::new(git())
-        .arg("-C")
-        .arg(repo_root)
-        .args(["show", &format!("HEAD:{file_path}")])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        None
-    }
+    let output = try_run_git(repo_root, &["show", &format!("HEAD:{file_path}")])?;
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Compute a split (side-by-side) diff between the committed and working-tree
@@ -66,12 +54,9 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
     for op in diff.ops() {
         match op {
             similar::DiffOp::Equal {
-                old_index,
-                new_index,
-                len,
+                old_index, len, ..
             } => {
-                let old_lines = diff.old_slices()[*old_index..*old_index + *len].to_vec();
-                for text in old_lines {
+                for &text in &diff.old_slices()[*old_index..*old_index + *len] {
                     lines.push(SplitLine {
                         old_lineno: Some(old_lineno),
                         new_lineno: Some(new_lineno),
@@ -82,12 +67,9 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                     old_lineno += 1;
                     new_lineno += 1;
                 }
-                let _ = new_index; // used implicitly
             }
             similar::DiffOp::Delete {
-                old_index,
-                old_len,
-                new_index: _,
+                old_index, old_len, ..
             } => {
                 for i in 0..*old_len {
                     let text = diff.old_slices()[*old_index + i];
@@ -103,9 +85,7 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                 }
             }
             similar::DiffOp::Insert {
-                old_index: _,
-                new_index,
-                new_len,
+                new_index, new_len, ..
             } => {
                 for i in 0..*new_len {
                     let text = diff.new_slices()[*new_index + i];

@@ -1,23 +1,22 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
 
-use super::{gh, git};
+use super::{default_branch, run_git, run_git_raw, try_run_git, try_run_gh};
 use crate::state::{BranchStatus, CheckBucket, CiCheck, GitChange, RepoCapabilities};
 
 pub fn collect_changes(repo_root: &Path) -> Result<Vec<GitChange>, String> {
-    let output = Command::new(git())
-        .arg("-C")
-        .arg(repo_root)
-        .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
-        .output()
-        .map_err(|error| format!("failed to run git status: {error}"))?;
+    let (status_result, numstat) = std::thread::scope(|s| {
+        let t1 = s.spawn(|| {
+            run_git_raw(
+                repo_root,
+                &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            )
+        });
+        let t2 = s.spawn(|| collect_numstat(repo_root));
+        (t1.join().unwrap(), t2.join().unwrap())
+    });
 
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
-
-    let numstat = collect_numstat(repo_root);
+    let output = status_result?;
     let mut changes = parse_status_entries(&output.stdout);
 
     for change in &mut changes {
@@ -80,21 +79,19 @@ pub fn parse_status_entries(bytes: &[u8]) -> Vec<GitChange> {
 }
 
 fn collect_numstat(repo_root: &Path) -> HashMap<String, (Option<u32>, Option<u32>)> {
+    let (unstaged, staged) = std::thread::scope(|s| {
+        let t1 = s.spawn(|| try_run_git(repo_root, &["diff", "--numstat", "-z"]));
+        let t2 = s.spawn(|| try_run_git(repo_root, &["diff", "--cached", "--numstat", "-z"]));
+        (t1.join().unwrap(), t2.join().unwrap())
+    });
+
     let mut map = HashMap::new();
-
-    for extra_args in [&["diff", "--numstat", "-z"][..], &["diff", "--cached", "--numstat", "-z"]] {
-        if let Ok(output) = Command::new(git())
-            .arg("-C")
-            .arg(repo_root)
-            .args(extra_args)
-            .output()
-        {
-            if output.status.success() {
-                parse_numstat_output(&output.stdout, &mut map);
-            }
-        }
+    if let Some(output) = unstaged {
+        parse_numstat_output(&output.stdout, &mut map);
     }
-
+    if let Some(output) = staged {
+        parse_numstat_output(&output.stdout, &mut map);
+    }
     map
 }
 
@@ -147,138 +144,86 @@ fn count_file_lines(repo_root: &Path, relative_path: &str) -> Option<u32> {
     Some(content.lines().count() as u32)
 }
 
-pub fn commits_ahead_of_main(worktree: &Path) -> Result<u32, String> {
-    // Detect default branch
-    let default_branch = Command::new(git())
-        .arg("-C")
-        .arg(worktree)
-        .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
-        .output()
+fn commits_ahead_of_main(worktree: &Path) -> u32 {
+    let branch = default_branch(worktree);
+    run_git(worktree, &["rev-list", "--count", &format!("{branch}..HEAD")])
         .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() { None } else { Some(s) }
-        })
-        .unwrap_or_else(|| "origin/main".to_string());
-
-    let output = Command::new(git())
-        .arg("-C")
-        .arg(worktree)
-        .args(["rev-list", "--count", &format!("{default_branch}..HEAD")])
-        .output()
-        .map_err(|e| format!("git rev-list failed: {e}"))?;
-
-    if !output.status.success() {
-        return Ok(0);
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u32>()
-        .unwrap_or(0))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
 }
 
-pub struct PrInfo {
-    pub url: String,
-    pub merged: bool,
-    pub number: Option<u32>,
-    pub state: Option<String>,
-    pub auto_merge_enabled: bool,
+struct PrInfo {
+    url: String,
+    merged: bool,
+    number: Option<u32>,
+    state: Option<String>,
+    auto_merge_enabled: bool,
 }
 
-pub fn check_pr_status(worktree: &Path) -> Result<Option<PrInfo>, String> {
-    let output = Command::new(gh())
-        .current_dir(worktree)
-        .args(["pr", "view", "--json", "url,state,number,autoMergeRequest"])
-        .output()
-        .map_err(|e| format!("gh pr view failed: {e}"))?;
+fn check_pr_status(worktree: &Path) -> Option<PrInfo> {
+    let text = try_run_gh(
+        worktree,
+        &["pr", "view", "--json", "url,state,number,autoMergeRequest"],
+    )?;
+    let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
 
-    if !output.status.success() {
-        return Ok(None);
-    }
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(text.trim()).map_err(|e| format!("failed to parse gh output: {e}"))?;
-
-    let url = parsed["url"].as_str().unwrap_or_default().to_string();
+    let url = parsed["url"]
+        .as_str()
+        .filter(|s| !s.is_empty())?
+        .to_string();
     let state = parsed["state"].as_str().unwrap_or_default().to_string();
-    let merged = state == "MERGED";
-    let number = parsed["number"].as_u64().map(|n| n as u32);
-    let auto_merge_enabled = !parsed["autoMergeRequest"].is_null();
 
-    if url.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(PrInfo {
-        url,
-        merged,
-        number,
+    Some(PrInfo {
+        merged: state == "MERGED",
+        number: parsed["number"].as_u64().map(|n| n as u32),
+        auto_merge_enabled: !parsed["autoMergeRequest"].is_null(),
         state: Some(state),
-        auto_merge_enabled,
-    }))
+        url,
+    })
 }
 
 pub fn check_repo_capabilities(worktree: &Path) -> RepoCapabilities {
-    let output = match Command::new(gh())
-        .current_dir(worktree)
-        .args([
+    try_run_gh(
+        worktree,
+        &[
             "api",
             "repos/{owner}/{repo}",
             "--jq",
             "{allow_auto_merge,allow_rebase_merge}",
-        ])
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return RepoCapabilities::default(),
-    };
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = match serde_json::from_str(text.trim()) {
-        Ok(v) => v,
-        Err(_) => return RepoCapabilities::default(),
-    };
-
-    RepoCapabilities {
+        ],
+    )
+    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    .map(|parsed| RepoCapabilities {
         auto_merge_allowed: parsed["allow_auto_merge"].as_bool().unwrap_or(false),
         rebase_merge_allowed: parsed["allow_rebase_merge"].as_bool().unwrap_or(true),
-    }
+    })
+    .unwrap_or_default()
 }
 
-pub fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
-    let output = match Command::new(gh())
-        .current_dir(worktree)
-        .args(["pr", "checks", "--json", "name,bucket,workflow,link"])
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return Vec::new(),
-    };
+fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
+    let entries: Vec<serde_json::Value> = try_run_gh(
+        worktree,
+        &["pr", "checks", "--json", "name,bucket,workflow,link"],
+    )
+    .and_then(|text| serde_json::from_str(&text).ok())
+    .unwrap_or_default();
 
-    let text = String::from_utf8_lossy(&output.stdout);
-    let parsed: Vec<serde_json::Value> = match serde_json::from_str(text.trim()) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-
-    parsed
+    entries
         .into_iter()
         .map(|entry| {
             let name = entry["name"].as_str().unwrap_or_default().to_string();
-            let bucket_str = entry["bucket"].as_str().unwrap_or_default();
-            let workflow = entry["workflow"].as_str().unwrap_or_default().to_string();
-            let link = entry["link"].as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
-
-            let bucket = match bucket_str {
+            let bucket = match entry["bucket"].as_str().unwrap_or_default() {
                 "pass" => CheckBucket::Pass,
                 "fail" => CheckBucket::Fail,
                 "pending" => CheckBucket::Pending,
                 "skipping" => CheckBucket::Skipping,
                 _ => CheckBucket::Cancel,
             };
+            let workflow = entry["workflow"].as_str().unwrap_or_default().to_string();
+            let link = entry["link"]
+                .as_str()
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty());
 
             CiCheck {
                 name,
@@ -291,20 +236,25 @@ pub fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
 }
 
 pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
-    let commits_ahead = commits_ahead_of_main(worktree).unwrap_or(0);
-    let branch_name = super::get_branch_name(worktree).ok();
-    let (pr_url, pr_merged, pr_number, pr_state, auto_merge_enabled) =
-        match check_pr_status(worktree) {
-            Ok(Some(info)) => (
-                Some(info.url),
-                info.merged,
-                info.number,
-                info.state,
-                info.auto_merge_enabled,
-            ),
-            _ => (None, false, None, None, false),
-        };
+    let (commits_ahead, branch_name, pr_info) = std::thread::scope(|s| {
+        let t1 = s.spawn(|| commits_ahead_of_main(worktree));
+        let t2 = s.spawn(|| super::get_branch_name(worktree).ok());
+        let t3 = s.spawn(|| check_pr_status(worktree));
+        (t1.join().unwrap(), t2.join().unwrap(), t3.join().unwrap())
+    });
 
+    let (pr_url, pr_merged, pr_number, pr_state, auto_merge_enabled) = match pr_info {
+        Some(info) => (
+            Some(info.url),
+            info.merged,
+            info.number,
+            info.state,
+            info.auto_merge_enabled,
+        ),
+        None => (None, false, None, None, false),
+    };
+
+    // collect_pr_checks depends on pr_url, must run after
     let checks = if pr_url.is_some() {
         collect_pr_checks(worktree)
     } else {

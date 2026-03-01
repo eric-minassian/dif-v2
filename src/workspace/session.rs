@@ -237,9 +237,35 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Save current branch status / repo capabilities to the outgoing session's cache
+        if let (Some(old_repo), Some(old_session)) = (
+            self.state.selected_repo.clone(),
+            self.state.selected_session.clone(),
+        ) {
+            if let Some(runtime) = self.state.runtimes.get_mut(&old_repo) {
+                if let Some(session_rt) = runtime.session_runtimes.get_mut(&old_session) {
+                    session_rt.cached_branch_status = Some(runtime.branch_status.clone());
+                    session_rt.cached_repo_capabilities = Some(runtime.repo_capabilities.clone());
+                }
+            }
+        }
+
         self.state.selected_repo = Some(repo_root.clone());
         self.state.selected_session = Some(session_id.clone());
         self.ensure_session_runtime(&repo_root, &session_id, window, cx);
+
+        // Restore cached branch status / repo capabilities from incoming session
+        if let Some(runtime) = self.state.runtimes.get_mut(&repo_root) {
+            if let Some(session_rt) = runtime.session_runtimes.get(&session_id) {
+                if let Some(cached) = &session_rt.cached_branch_status {
+                    runtime.branch_status = cached.clone();
+                }
+                if let Some(cached) = &session_rt.cached_repo_capabilities {
+                    runtime.repo_capabilities = cached.clone();
+                }
+            }
+        }
+
         self.state.config.last_selected_repo = Some(repo_root.clone());
 
         if let Some(project) = self

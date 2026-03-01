@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use super::git;
+use super::run_git;
 
 pub fn normalize_repo_path(path: &Path) -> Result<PathBuf, String> {
     let expanded = expand_tilde(path);
@@ -9,22 +8,12 @@ pub fn normalize_repo_path(path: &Path) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|error| format!("failed to access {}: {error}", expanded.display()))?;
 
-    let output = Command::new(git())
-        .arg("-C")
-        .arg(&canonical)
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
+    let toplevel = run_git(&canonical, &["rev-parse", "--show-toplevel"])
+        .map_err(|_| "that folder is not inside a Git worktree".to_string())?;
 
-    if !output.status.success() {
-        return Err("that folder is not inside a Git worktree".to_string());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let repo_root = PathBuf::from(stdout.trim());
-    repo_root
+    PathBuf::from(&toplevel)
         .canonicalize()
-        .map_err(|error| format!("failed to normalize {}: {error}", repo_root.display()))
+        .map_err(|error| format!("failed to normalize {toplevel}: {error}"))
 }
 
 pub fn is_valid_repo(path: &Path) -> bool {
@@ -32,18 +21,7 @@ pub fn is_valid_repo(path: &Path) -> bool {
 }
 
 pub fn get_branch_name(worktree: &Path) -> Result<String, String> {
-    let output = Command::new(git())
-        .arg("-C")
-        .arg(worktree)
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .map_err(|e| format!("failed to get branch name: {e}"))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    run_git(worktree, &["rev-parse", "--abbrev-ref", "HEAD"])
 }
 
 pub(crate) fn expand_tilde(path: &Path) -> PathBuf {

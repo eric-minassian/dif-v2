@@ -124,6 +124,14 @@ impl WorkspaceView {
             .unwrap_or_else(|| repo_root.to_path_buf())
     }
 
+    fn working_dir(&self, repo: &Path) -> PathBuf {
+        self.state
+            .selected_session
+            .as_deref()
+            .map(|sid| self.worktree_or_repo(repo, sid))
+            .unwrap_or_else(|| repo.to_path_buf())
+    }
+
     fn ensure_session_runtime(
         &mut self,
         repo_root: &Path,
@@ -169,6 +177,8 @@ impl WorkspaceView {
             selected_side_tab: selected_tab,
             next_tab_id: next_id,
             commit_message: String::new(),
+            cached_branch_status: None,
+            cached_repo_capabilities: None,
         };
 
         let runtime = self

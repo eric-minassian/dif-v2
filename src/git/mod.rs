@@ -8,6 +8,7 @@ mod worktree;
 mod tests;
 
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 /// Resolve the full path to a CLI tool.
@@ -41,6 +42,78 @@ fn git() -> &'static Path {
 fn gh() -> &'static Path {
     static GH: OnceLock<PathBuf> = OnceLock::new();
     GH.get_or_init(|| resolve_bin("gh"))
+}
+
+// ── Command helpers ─────────────────────────────────────────────────────────
+
+/// Run a git command in `dir` and return the raw `Output` on success.
+pub(crate) fn run_git_raw(dir: &Path, args: &[&str]) -> Result<Output, String> {
+    let label = args.first().copied().unwrap_or("git");
+    let output = Command::new(git())
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git {label}: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git {label}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(output)
+}
+
+/// Run a git command in `dir` and return trimmed stdout.
+pub(crate) fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
+    run_git_raw(dir, args).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+/// Run a git command, returning `None` on any failure.
+pub(crate) fn try_run_git(dir: &Path, args: &[&str]) -> Option<Output> {
+    Command::new(git())
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+}
+
+/// Run a `gh` CLI command and return trimmed stdout.
+pub(crate) fn run_gh(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let label = args.iter().take(2).copied().collect::<Vec<_>>().join(" ");
+    let output = Command::new(gh())
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .map_err(|e| format!("gh {label}: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "gh {label}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Run a `gh` CLI command, returning `None` on any failure.
+pub(crate) fn try_run_gh(dir: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new(gh())
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Detect the default branch from the remote (e.g. `origin/main`).
+pub(crate) fn default_branch(dir: &Path) -> String {
+    run_git(dir, &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "origin/main".to_string())
 }
 
 pub use commands::{

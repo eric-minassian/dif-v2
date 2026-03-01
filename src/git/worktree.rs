@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use super::git;
 use super::repo::home_dir;
+use super::{default_branch, run_git};
 
 fn generate_short_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -42,52 +41,22 @@ pub fn create_worktree(
     let worktree_path = project_dir.join(&short_id);
     let branch_name = format!("dif/{sanitized_name}-{short_id}");
 
-    // Detect the default branch from origin (main, master, etc.)
-    let default_branch = Command::new(git())
-        .arg("-C")
-        .arg(repo_root)
-        .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() { None } else { Some(s) }
-        })
-        .unwrap_or_else(|| "origin/main".to_string());
+    let branch = default_branch(repo_root);
 
     // Fetch latest so the worktree isn't based on a stale local ref
-    let fetch_branch = default_branch.strip_prefix("origin/").unwrap_or(&default_branch);
-    let _ = Command::new(git())
-        .arg("-C")
-        .arg(repo_root)
-        .args(["fetch", "origin", fetch_branch])
-        .output();
+    let fetch_branch = branch.strip_prefix("origin/").unwrap_or(&branch);
+    let _ = run_git(repo_root, &["fetch", "origin", fetch_branch]);
 
-    let output = Command::new(git())
-        .arg("-C")
-        .arg(repo_root)
-        .args(["worktree", "add", "-b", &branch_name])
-        .arg(&worktree_path)
-        .arg(&default_branch)
-        .output()
-        .map_err(|e| format!("failed to run git worktree add: {e}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "git worktree add failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
+    let worktree_str = worktree_path.to_string_lossy();
+    run_git(
+        repo_root,
+        &["worktree", "add", "-b", &branch_name, &worktree_str, &branch],
+    )?;
 
     Ok(worktree_path)
 }
 
 pub fn remove_worktree(repo_root: &Path, worktree_path: &Path) {
-    let _ = Command::new(git())
-        .arg("-C")
-        .arg(repo_root)
-        .args(["worktree", "remove", "--force"])
-        .arg(worktree_path)
-        .output();
+    let path_str = worktree_path.to_string_lossy();
+    let _ = run_git(repo_root, &["worktree", "remove", "--force", &path_str]);
 }

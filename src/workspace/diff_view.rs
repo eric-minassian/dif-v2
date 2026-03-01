@@ -22,12 +22,7 @@ impl WorkspaceView {
             return;
         };
 
-        let working_dir = self
-            .state
-            .selected_session
-            .as_deref()
-            .map(|sid| self.worktree_or_repo(&repo, sid))
-            .unwrap_or_else(|| repo.clone());
+        let working_dir = self.working_dir(&repo);
 
         let view = cx.entity().clone();
         let file_path_clone = file_path.clone();

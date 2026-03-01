@@ -191,12 +191,7 @@ impl WorkspaceView {
         runtime.action_phase = ActionPhase::Working("Committing...".into());
         cx.notify();
 
-        let working_dir = self
-            .state
-            .selected_session
-            .as_deref()
-            .map(|sid| self.worktree_or_repo(&repo, sid))
-            .unwrap_or_else(|| repo.clone());
+        let working_dir = self.working_dir(&repo);
 
         let view = cx.entity().clone();
         let repo_clone = repo.clone();
@@ -280,12 +275,7 @@ impl WorkspaceView {
         runtime.action_phase = ActionPhase::Working("Amending...".into());
         cx.notify();
 
-        let working_dir = self
-            .state
-            .selected_session
-            .as_deref()
-            .map(|sid| self.worktree_or_repo(&repo, sid))
-            .unwrap_or_else(|| repo.clone());
+        let working_dir = self.working_dir(&repo);
 
         let view = cx.entity().clone();
         let repo_clone = repo.clone();
@@ -359,12 +349,7 @@ impl WorkspaceView {
         runtime.action_phase = ActionPhase::Working("Creating PR...".into());
         cx.notify();
 
-        let working_dir = self
-            .state
-            .selected_session
-            .as_deref()
-            .map(|sid| self.worktree_or_repo(&repo, sid))
-            .unwrap_or_else(|| repo.clone());
+        let working_dir = self.working_dir(&repo);
 
         let view = cx.entity().clone();
         let repo_clone = repo.clone();
@@ -426,12 +411,7 @@ impl WorkspaceView {
         runtime.action_phase = ActionPhase::Working("Merging...".into());
         cx.notify();
 
-        let working_dir = self
-            .state
-            .selected_session
-            .as_deref()
-            .map(|sid| self.worktree_or_repo(&repo, sid))
-            .unwrap_or_else(|| repo.clone());
+        let working_dir = self.working_dir(&repo);
 
         let view = cx.entity().clone();
         let repo_clone = repo.clone();
@@ -492,12 +472,7 @@ impl WorkspaceView {
         runtime.action_phase = ActionPhase::Working(label.into());
         cx.notify();
 
-        let working_dir = self
-            .state
-            .selected_session
-            .as_deref()
-            .map(|sid| self.worktree_or_repo(&repo, sid))
-            .unwrap_or_else(|| repo.clone());
+        let working_dir = self.working_dir(&repo);
 
         let view = cx.entity().clone();
         let repo_clone = repo.clone();
@@ -554,41 +529,38 @@ impl WorkspaceView {
         let generation = self.state.git_poll_generation;
         let view = cx.entity().clone();
 
-        let git_dir = self
-            .state
-            .selected_session
-            .as_deref()
-            .map(|sid| self.worktree_or_repo(&repo_root, sid))
-            .unwrap_or_else(|| repo_root.clone());
+        let git_dir = self.working_dir(&repo_root);
 
         window
             .spawn(cx, async move |cx| {
                 let mut tick: u32 = 0;
                 loop {
                     let dir = git_dir.clone();
-                    let snapshot = cx
+                    let snap_task = cx
                         .background_executor()
-                        .spawn(async move { git::collect_changes(&dir) })
-                        .await;
+                        .spawn(async move { git::collect_changes(&dir) });
 
                     // Every 5th tick (~10s) or on first tick, also collect branch status
-                    // and repo capabilities
-                    let (branch_status, repo_caps) = if tick % 5 == 0 {
+                    // and repo capabilities — spawn concurrently with collect_changes
+                    let status_task = if tick % 5 == 0 {
                         let dir = git_dir.clone();
-                        let dir2 = git_dir.clone();
-                        let status = cx
-                            .background_executor()
-                            .spawn(async move { git::collect_branch_status(&dir) })
-                            .await;
-                        let caps = cx
-                            .background_executor()
-                            .spawn(async move { git::check_repo_capabilities(&dir2) })
-                            .await;
-                        (Some(status), Some(caps))
+                        Some(cx.background_executor().spawn(async move {
+                            git::collect_branch_status(&dir)
+                        }))
                     } else {
-                        (None, None)
+                        None
+                    };
+                    let caps_task = if tick % 5 == 0 {
+                        let dir = git_dir.clone();
+                        Some(cx.background_executor().spawn(async move {
+                            git::check_repo_capabilities(&dir)
+                        }))
+                    } else {
+                        None
                     };
 
+                    // Update UI immediately with file changes (fast, local git only)
+                    let snapshot = snap_task.await;
                     let keep_running = cx
                         .update(|_, cx| {
                             view.update(cx, |this, cx| {
@@ -597,37 +569,14 @@ impl WorkspaceView {
                                 {
                                     return false;
                                 }
-
                                 let runtime = this
                                     .state
                                     .runtimes
                                     .entry(repo_root.clone())
                                     .or_insert_with(ProjectRuntime::default);
-
-                                let mut changed = apply_git_snapshot(runtime, &snapshot);
-
-                                if let Some(status) = branch_status {
-                                    if runtime.branch_status != status {
-                                        // Close popover when checks change so it doesn't show stale data
-                                        if runtime.branch_status.checks != status.checks {
-                                            this.state.checks_popover_open = false;
-                                        }
-                                        runtime.branch_status = status;
-                                        changed = true;
-                                    }
-                                }
-
-                                if let Some(caps) = repo_caps {
-                                    if runtime.repo_capabilities != caps {
-                                        runtime.repo_capabilities = caps;
-                                        changed = true;
-                                    }
-                                }
-
-                                if changed {
+                                if apply_git_snapshot(runtime, &snapshot) {
                                     cx.notify();
                                 }
-
                                 true
                             })
                         })
@@ -635,6 +584,63 @@ impl WorkspaceView {
 
                     if !keep_running {
                         break;
+                    }
+
+                    // Then wait for slow network tasks and update UI again
+                    if let Some(status_task) = status_task {
+                        let branch_status = status_task.await;
+                        let repo_caps = match caps_task {
+                            Some(t) => Some(t.await),
+                            None => None,
+                        };
+
+                        let still_running = cx
+                            .update(|_, cx| {
+                                view.update(cx, |this, cx| {
+                                    if this.state.git_poll_generation != generation
+                                        || this.state.selected_repo.as_ref() != Some(&repo_root)
+                                    {
+                                        return false;
+                                    }
+                                    let session_id = this.state.selected_session.clone();
+                                    let runtime = this
+                                        .state
+                                        .runtimes
+                                        .entry(repo_root.clone())
+                                        .or_insert_with(ProjectRuntime::default);
+
+                                    let mut changed = false;
+                                    if runtime.branch_status != branch_status {
+                                        if runtime.branch_status.checks != branch_status.checks {
+                                            this.state.checks_popover_open = false;
+                                        }
+                                        runtime.branch_status = branch_status;
+                                        changed = true;
+                                    }
+                                    if let Some(caps) = repo_caps {
+                                        if runtime.repo_capabilities != caps {
+                                            runtime.repo_capabilities = caps;
+                                            changed = true;
+                                        }
+                                    }
+                                    // Cache fresh values in the active session
+                                    if changed {
+                                        if let Some(sid) = &session_id {
+                                            if let Some(srt) = runtime.session_runtimes.get_mut(sid) {
+                                                srt.cached_branch_status = Some(runtime.branch_status.clone());
+                                                srt.cached_repo_capabilities = Some(runtime.repo_capabilities.clone());
+                                            }
+                                        }
+                                        cx.notify();
+                                    }
+                                    true
+                                })
+                            })
+                            .unwrap_or(false);
+
+                        if !still_running {
+                            break;
+                        }
                     }
 
                     tick = tick.wrapping_add(1);

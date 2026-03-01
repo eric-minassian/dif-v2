@@ -86,18 +86,7 @@ pub fn load_config() -> Result<AppConfig> {
                 })
                 .collect();
 
-            let (sessions, last_selected_session) = if sessions.is_empty() {
-                (
-                    vec![SavedSession {
-                        id: "1".to_string(),
-                        name: "Session 1".to_string(),
-                        worktree_path: None,
-                    }],
-                    Some("1".to_string()),
-                )
-            } else {
-                (sessions, item.last_selected_session)
-            };
+            let last_selected_session = item.last_selected_session;
 
             let settings = item
                 .settings
@@ -198,18 +187,7 @@ mod tests {
                         })
                         .collect();
 
-                    let (sessions, last_selected_session) = if sessions.is_empty() {
-                        (
-                            vec![SavedSession {
-                                id: "1".to_string(),
-                                name: "Session 1".to_string(),
-                                worktree_path: None,
-                            }],
-                            Some("1".to_string()),
-                        )
-                    } else {
-                        (sessions, item.last_selected_session)
-                    };
+                    let last_selected_session = item.last_selected_session;
 
                     Some(SavedProject {
                         repo_root: item.repo_root?,
@@ -236,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn creates_default_session_for_old_config() {
+    fn keeps_empty_sessions_for_old_config() {
         let raw = RawAppConfig {
             projects: vec![RawSavedProject {
                 repo_root: Some(PathBuf::from("/tmp/old-project")),
@@ -269,18 +247,7 @@ mod tests {
                         })
                         .collect();
 
-                    let (sessions, last_selected_session) = if sessions.is_empty() {
-                        (
-                            vec![SavedSession {
-                                id: "1".to_string(),
-                                name: "Session 1".to_string(),
-                                worktree_path: None,
-                            }],
-                            Some("1".to_string()),
-                        )
-                    } else {
-                        (sessions, item.last_selected_session)
-                    };
+                    let last_selected_session = item.last_selected_session;
 
                     Some(SavedProject {
                         repo_root: item.repo_root?,
@@ -297,12 +264,7 @@ mod tests {
         };
 
         assert_eq!(config.projects.len(), 1);
-        assert_eq!(config.projects[0].sessions.len(), 1);
-        assert_eq!(config.projects[0].sessions[0].id, "1");
-        assert_eq!(config.projects[0].sessions[0].name, "Session 1");
-        assert_eq!(
-            config.projects[0].last_selected_session,
-            Some("1".to_string())
-        );
+        assert_eq!(config.projects[0].sessions.len(), 0);
+        assert_eq!(config.projects[0].last_selected_session, None);
     }
 }

@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton, Window};
+use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton};
 
 use crate::components::{panel, section_header, PanelSide};
 use crate::state::ActionPhase;
@@ -8,8 +8,8 @@ use super::panel_action::{derive_panel_action, PanelAction};
 use super::WorkspaceView;
 
 impl WorkspaceView {
-    pub(crate) fn render_right_sidebar(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let top = self.render_changes_panel(window, cx);
+    pub(crate) fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let top = self.render_changes_panel(cx);
         let bottom = self.render_side_terminal(cx);
 
         panel(PanelSide::Right)
@@ -23,7 +23,7 @@ impl WorkspaceView {
         div().into_any_element()
     }
 
-    fn render_changes_panel(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_changes_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
         let project_runtime = self.selected_project_runtime();
         let snapshot = project_runtime.map(|runtime| &runtime.git_snapshot);
@@ -46,18 +46,13 @@ impl WorkspaceView {
             .map(|rt| &rt.action_phase)
             .cloned()
             .unwrap_or_default();
-        let commit_message = self
-            .selected_session_runtime()
-            .map(|rt| rt.commit_message.clone())
-            .unwrap_or_default();
-
         let repo_capabilities = project_runtime
             .map(|rt| &rt.repo_capabilities)
             .cloned()
             .unwrap_or_default();
 
         let panel_action = derive_panel_action(has_changes, staged_count, &branch_status);
-        let is_busy = matches!(action_phase, ActionPhase::Working(_));
+        let _is_busy = matches!(action_phase, ActionPhase::Working(_));
 
         // Build the action button for the header bar
         let header_action = self.render_header_action_button(
@@ -121,10 +116,6 @@ impl WorkspaceView {
                         .text_color(t.text_primary)
                         .child(message.clone()),
                 )
-            })
-            // Commit message input (shown when action is Commit)
-            .when(panel_action == PanelAction::Commit && !is_busy, |el| {
-                el.child(self.render_commit_input(&commit_message, window, cx))
             })
             .child(
                 div()

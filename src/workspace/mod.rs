@@ -1,6 +1,5 @@
 mod changes_list;
 mod checks_popover;
-mod commit_input;
 mod diff_view;
 mod git_actions;
 mod git_poll;
@@ -71,9 +70,10 @@ actions!(
 pub struct WorkspaceView {
     state: AppState,
     focus_handle: FocusHandle,
-    commit_input_focus: FocusHandle,
     /// (repo_root, session_id, input entity, event subscription, blur subscription)
     renaming_session: Option<(PathBuf, String, Entity<TextInput>, Subscription, Subscription)>,
+    /// (repo_root, input entity, event subscription, blur subscription, validation error) for creating a new session
+    creating_session: Option<(PathBuf, Entity<TextInput>, Subscription, Subscription, Option<String>)>,
     /// (repo_root, input entity, event subscription) for adding init commands in settings
     settings_input: Option<(PathBuf, Entity<TextInput>, Subscription)>,
 }
@@ -101,14 +101,13 @@ impl WorkspaceView {
             .and_then(|repo| pick_initial_session(&state.config, repo));
 
         let focus_handle = cx.focus_handle();
-        let commit_input_focus = cx.focus_handle();
         focus_handle.focus(window, cx);
 
         let mut this = Self {
             state,
             focus_handle,
-            commit_input_focus,
             renaming_session: None,
+            creating_session: None,
             settings_input: None,
         };
         if let Some(repo) = this.state.selected_repo.clone() {
@@ -187,7 +186,6 @@ impl WorkspaceView {
             side_tabs,
             selected_side_tab: selected_tab,
             next_tab_id: next_id,
-            commit_message: String::new(),
             cached_branch_status: None,
             cached_repo_capabilities: None,
         };
@@ -340,7 +338,7 @@ impl WorkspaceView {
 }
 
 impl Render for WorkspaceView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
 
         let left = if self.state.left_sidebar_collapsed {
@@ -352,7 +350,7 @@ impl Render for WorkspaceView {
         let right = if self.state.right_sidebar_collapsed {
             self.render_collapsed_right_sidebar()
         } else {
-            self.render_right_sidebar(window, cx)
+            self.render_right_sidebar(cx)
         };
 
         let is_resizing = self.state.resizing_sidebar.is_some();

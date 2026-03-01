@@ -22,7 +22,10 @@ use std::sync::Once;
 use drawing::hsla_from_rgb;
 use element::TerminalTextElement;
 
-actions!(terminal_view, [Copy, Paste, SelectAll, Tab, TabPrev]);
+actions!(
+    terminal_view,
+    [Copy, Paste, SelectAll, Tab, TabPrev, EscapeKey]
+);
 
 const KEY_CONTEXT: &str = "Terminal";
 static KEY_BINDINGS: Once = Once::new();
@@ -30,6 +33,7 @@ static KEY_BINDINGS: Once = Once::new();
 fn ensure_key_bindings(cx: &mut App) {
     KEY_BINDINGS.call_once(|| {
         cx.bind_keys([
+            KeyBinding::new("escape", EscapeKey, Some(KEY_CONTEXT)),
             KeyBinding::new("tab", Tab, Some(KEY_CONTEXT)),
             KeyBinding::new("shift-tab", TabPrev, Some(KEY_CONTEXT)),
         ]);
@@ -76,6 +80,7 @@ pub struct TerminalView {
     pub(crate) marked_text: Option<SharedString>,
     pub(crate) marked_selected_range_utf16: Range<usize>,
     pub(crate) font: gpui::Font,
+    pub(crate) was_focused: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -120,6 +125,7 @@ impl TerminalView {
             marked_text: None,
             marked_selected_range_utf16: 0..0,
             font: super::default_terminal_font(),
+            was_focused: false,
         }
         .with_refreshed_viewport()
     }
@@ -151,6 +157,20 @@ impl Render for TerminalView {
             self.pending_refresh = false;
         }
 
+        let is_focused = self.focus_handle.is_focused(window);
+        if is_focused != self.was_focused {
+            self.was_focused = is_focused;
+            if self.session.focus_events_enabled() {
+                if let Some(input) = self.input.as_ref() {
+                    if is_focused {
+                        input.send(b"\x1b[I");
+                    } else {
+                        input.send(b"\x1b[O");
+                    }
+                }
+            }
+        }
+
         if self.session.window_title_updates_enabled() {
             let title = self
                 .session
@@ -173,6 +193,7 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::on_paste))
             .on_action(cx.listener(Self::on_tab))
             .on_action(cx.listener(Self::on_tab_prev))
+            .on_action(cx.listener(Self::on_escape))
             .on_key_down(cx.listener(Self::on_key_down))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
@@ -187,7 +208,7 @@ impl Render for TerminalView {
             .text_color(hsla_from_rgb(self.session.default_foreground()))
             .font(self.font.clone())
             .text_sm()
-            .line_height(relative(1.2))
+            .line_height(relative(1.0))
             .whitespace_nowrap()
             .child(TerminalTextElement { view: cx.entity() })
     }

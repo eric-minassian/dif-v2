@@ -7,9 +7,18 @@ use gpui::{
 };
 
 use super::helpers::{ctrl_byte_for_keystroke, should_skip_key_down_for_ime};
-use super::{Tab, TabPrev, TerminalView};
+use super::{EscapeKey, Tab, TabPrev, TerminalView};
 
 impl TerminalView {
+    pub(crate) fn on_escape(
+        &mut self,
+        _: &EscapeKey,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.send_input_parts(&[&[0x1b]], cx);
+    }
+
     pub(crate) fn on_tab(&mut self, _: &Tab, _window: &mut Window, cx: &mut Context<Self>) {
         self.send_tab(false, cx);
     }
@@ -158,7 +167,7 @@ impl TerminalView {
         if should_skip_key_down_for_ime(self.input.is_some(), &raw_keystroke) {
             return;
         }
-        let keystroke = raw_keystroke.with_simulated_ime();
+        let keystroke = raw_keystroke.clone().with_simulated_ime();
 
         if keystroke.modifiers.platform || keystroke.modifiers.function {
             return;
@@ -209,7 +218,7 @@ impl TerminalView {
             }
 
             if keystroke.modifiers.alt
-                && let Some(text) = keystroke.key_char.as_deref()
+                && let Some(text) = raw_keystroke.key_char.as_deref()
             {
                 input.send(&[0x1b]);
                 input.send(text.as_bytes());

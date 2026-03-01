@@ -5,8 +5,8 @@ use gpui::{
 
 use super::drawing::cell_metrics;
 use super::helpers::{
-    byte_index_for_column_in_line, sgr_mouse_button_value, sgr_mouse_sequence,
-    window_position_to_local,
+    byte_index_for_column_in_line, normal_mouse_sequence, sgr_mouse_button_value,
+    sgr_mouse_sequence, window_position_to_local,
 };
 use super::url::url_at_column_in_line;
 use super::ByteSelection;
@@ -60,7 +60,6 @@ impl TerminalView {
         if event.modifiers.shift
             || self.input.is_none()
             || !self.session.mouse_reporting_enabled()
-            || !self.session.mouse_sgr_enabled()
         {
             if event.button == MouseButton::Left
                 && let Some(index) = self.mouse_position_to_viewport_index(event.position, window)
@@ -93,8 +92,13 @@ impl TerminalView {
                 event.modifiers.alt,
                 event.modifiers.control,
             );
-            let seq = sgr_mouse_sequence(button_value, col, row, true);
-            input.send(seq.as_bytes());
+            if self.session.mouse_sgr_enabled() {
+                let seq = sgr_mouse_sequence(button_value, col, row, true);
+                input.send(seq.as_bytes());
+            } else {
+                let seq = normal_mouse_sequence(button_value, col, row);
+                input.send(&seq);
+            }
         }
     }
 
@@ -107,7 +111,6 @@ impl TerminalView {
         if event.modifiers.shift
             || self.input.is_none()
             || !self.session.mouse_reporting_enabled()
-            || !self.session.mouse_sgr_enabled()
         {
             if let Some(selection) = self.selection {
                 if selection.range().is_empty() {
@@ -137,8 +140,21 @@ impl TerminalView {
                 event.modifiers.alt,
                 event.modifiers.control,
             );
-            let seq = sgr_mouse_sequence(button_value, col, row, false);
-            input.send(seq.as_bytes());
+            if self.session.mouse_sgr_enabled() {
+                let seq = sgr_mouse_sequence(button_value, col, row, false);
+                input.send(seq.as_bytes());
+            } else {
+                // Normal encoding has no release event; send button 3 (release)
+                let release_value = sgr_mouse_button_value(
+                    3,
+                    false,
+                    false,
+                    event.modifiers.alt,
+                    event.modifiers.control,
+                );
+                let seq = normal_mouse_sequence(release_value, col, row);
+                input.send(&seq);
+            }
         }
     }
 
@@ -151,7 +167,6 @@ impl TerminalView {
         if !event.modifiers.shift
             && self.input.is_some()
             && self.session.mouse_reporting_enabled()
-            && self.session.mouse_sgr_enabled()
         {
             let send_motion = if self.session.mouse_any_event_enabled() {
                 true
@@ -182,8 +197,13 @@ impl TerminalView {
                     event.modifiers.control,
                 );
                 if let Some(input) = self.input.as_ref() {
-                    let seq = sgr_mouse_sequence(button_value, col, row, true);
-                    input.send(seq.as_bytes());
+                    if self.session.mouse_sgr_enabled() {
+                        let seq = sgr_mouse_sequence(button_value, col, row, true);
+                        input.send(seq.as_bytes());
+                    } else {
+                        let seq = normal_mouse_sequence(button_value, col, row);
+                        input.send(&seq);
+                    }
                 }
                 return;
             }
@@ -228,7 +248,6 @@ impl TerminalView {
         if let Some(input) = self.input.as_ref()
             && !event.modifiers.shift
             && self.session.mouse_reporting_enabled()
-            && self.session.mouse_sgr_enabled()
         {
             let Some((col, row)) = self.mouse_position_to_cell(event.position, window) else {
                 return;
@@ -244,8 +263,13 @@ impl TerminalView {
             );
             let steps = delta_lines.unsigned_abs().min(10);
             for _ in 0..steps {
-                let seq = sgr_mouse_sequence(button_value, col, row, true);
-                input.send(seq.as_bytes());
+                if self.session.mouse_sgr_enabled() {
+                    let seq = sgr_mouse_sequence(button_value, col, row, true);
+                    input.send(seq.as_bytes());
+                } else {
+                    let seq = normal_mouse_sequence(button_value, col, row);
+                    input.send(&seq);
+                }
             }
             return;
         }

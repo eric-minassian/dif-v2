@@ -76,6 +76,23 @@ impl WorkspaceView {
         let left_collapsed = self.state.left_sidebar_collapsed;
         let right_collapsed = self.state.right_sidebar_collapsed;
 
+        // Resolve project display name and branch for center context
+        let project_name = self
+            .state
+            .selected_repo
+            .as_ref()
+            .and_then(|repo| {
+                self.state
+                    .config
+                    .projects
+                    .iter()
+                    .find(|p| &p.repo_root == repo)
+                    .map(|p| p.display_name.clone())
+            });
+        let branch_name = self
+            .selected_project_runtime()
+            .and_then(|rt| rt.branch_status.branch_name.clone());
+
         div()
             .h(px(36.))
             .flex_shrink_0()
@@ -115,6 +132,36 @@ impl WorkspaceView {
                                     })
                             ),
                     ),
+            )
+            // Center: project name / branch
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .justify_center()
+                    .items_center()
+                    .gap(px(4.))
+                    .overflow_hidden()
+                    .text_xs()
+                    .when_some(project_name, |el, name| {
+                        el.child(
+                            div()
+                                .text_color(t.text_secondary)
+                                .child(name),
+                        )
+                    })
+                    .when_some(branch_name, |el, branch| {
+                        el.child(
+                            div()
+                                .text_color(t.text_dim)
+                                .child("/"),
+                        )
+                        .child(
+                            div()
+                                .text_color(t.text_muted)
+                                .child(branch),
+                        )
+                    }),
             )
             // Right side: update indicator + sidebar toggle
             .child(

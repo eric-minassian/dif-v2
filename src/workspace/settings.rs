@@ -130,9 +130,11 @@ impl WorkspaceView {
                     .cursor_pointer()
                     .px_2()
                     .py_1()
+                    .rounded_sm()
                     .text_xs()
-                    .text_color(t.text_dim)
-                    .hover(|style| style.text_color(t.text_primary))
+                    .bg(t.bg_elevated)
+                    .text_color(t.text_muted)
+                    .hover(|style| style.bg(t.bg_elevated_hover).text_color(t.text_primary))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _event, _window, cx| {
@@ -142,7 +144,7 @@ impl WorkspaceView {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(icon_x().size_3().text_color(t.text_dim))
+                    .child(icon_x().size_3().text_color(t.text_muted))
                     .child("Esc"),
             );
 
@@ -163,10 +165,10 @@ impl WorkspaceView {
             .gap_2()
             .child(
                 div()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .text_sm()
-                    .text_color(t.text_secondary)
-                    .child("About"),
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(t.text_muted)
+                    .child("ABOUT"),
             )
             .child(
                 div()
@@ -293,8 +295,9 @@ impl WorkspaceView {
                 .bg(t.bg_elevated)
                 .child(
                     div()
-                        .font_weight(gpui::FontWeight::BOLD)
                         .text_sm()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(t.text_primary)
                         .child(project.display_name.clone()),
                 )
                 .child(
@@ -344,7 +347,7 @@ impl WorkspaceView {
                                 .py_1()
                                 .rounded_sm()
                                 .text_xs()
-                                .bg(if is_enabled { t.accent_green } else { t.bg_surface })
+                                .bg(if is_enabled { t.accent_blue } else { t.bg_surface })
                                 .text_color(if is_enabled { t.bg_panel } else { t.text_muted })
                                 .hover(|style| style.bg(t.bg_elevated_hover))
                                 .on_mouse_up(

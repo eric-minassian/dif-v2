@@ -168,16 +168,22 @@ impl WorkspaceView {
                 let delete_tab_id = tab.id.clone();
 
                 div()
+                    .group("tab-item")
                     .flex()
                     .items_center()
                     .gap_1()
                     .px_2()
                     .py_1()
-                    .rounded_md()
                     .bg(if is_selected {
                         t.bg_elevated
                     } else {
                         t.transparent
+                    })
+                    .when(is_selected, |el| {
+                        el.border_b_2().border_color(t.accent_blue)
+                    })
+                    .when(!is_selected, |el| {
+                        el.hover(|style| style.bg(t.hover_overlay))
                     })
                     .child(
                         div()
@@ -194,27 +200,33 @@ impl WorkspaceView {
                                     this.on_select_side_tab(select_tab_id.clone(), cx);
                                 }),
                             )
-                            .child(tab.id.clone()),
+                            .child(format!("Terminal {}", tab.id)),
                     )
                     .child(
                         div()
                             .cursor_pointer()
-                            .text_color(t.text_line_number)
+                            .text_color(t.text_dim)
+                            .invisible()
+                            .group_hover("tab-item", |style| style.visible())
+                            .hover(|style| style.text_color(t.text_primary))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(move |this, _event, _window, cx| {
                                     this.on_delete_side_tab(delete_tab_id.clone(), cx);
                                 }),
                             )
-                            .child(icon_x().size_3().text_color(t.text_line_number)),
+                            .child(icon_x().size_3().text_color(t.text_dim)),
                     )
             }))
             .child(
                 div()
+                    .id("add-tab-btn")
                     .cursor_pointer()
                     .px_2()
                     .py_1()
+                    .rounded_sm()
                     .text_color(t.text_dim)
+                    .hover(|style| style.bg(t.hover_overlay).text_color(t.text_muted))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _event, window, cx| {

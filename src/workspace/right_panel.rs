@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, px, AnyElement, Context, Hsla, MouseButton};
+use gpui::{div, prelude::*, px, AnyElement, Context, Hsla, MouseButton, Window};
 
 use crate::components::{panel, section_header, PanelSide};
 use crate::icons::{icon_check, icon_circle_dot, icon_external_link, icon_minus, icon_x};
@@ -41,8 +41,8 @@ fn derive_panel_action(
 }
 
 impl WorkspaceView {
-    pub(crate) fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let top = self.render_changes_panel(cx);
+    pub(crate) fn render_right_sidebar(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let top = self.render_changes_panel(window, cx);
         let bottom = self.render_side_terminal(cx);
 
         panel(PanelSide::Right)
@@ -56,7 +56,7 @@ impl WorkspaceView {
         div().into_any_element()
     }
 
-    fn render_changes_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_changes_panel(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
         let project_runtime = self.selected_project_runtime();
         let snapshot = project_runtime.map(|runtime| &runtime.git_snapshot);
@@ -64,7 +64,6 @@ impl WorkspaceView {
             .map(|snapshot| snapshot.changes.as_slice())
             .unwrap_or(&[]);
         let error = snapshot.and_then(|snapshot| snapshot.last_error.as_ref());
-        let count = changes.len();
         let has_changes = !changes.is_empty();
 
         let staged_files = project_runtime
@@ -129,21 +128,20 @@ impl WorkspaceView {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(pr_link)
                         .child(ci_status)
-                        .when(count > 0, |el| {
-                            el.child(
-                                div()
-                                    .text_xs()
-                                    .text_color(t.text_dim)
-                                    .child(format!("{count}")),
-                            )
-                        })
-                        .child(header_action),
+                        .child(pr_link),
                 ),
             )
-            // Status bar (working / error)
-            .child(self.render_action_status(&action_phase, cx))
+            // Full-width primary action button / status
+            .when(panel_action != PanelAction::None || !matches!(action_phase, ActionPhase::Idle), |el| {
+                el.child(
+                    div()
+                        .px_3()
+                        .pt_2()
+                        .pb_1()
+                        .child(self.render_action_or_status(&panel_action, &action_phase, header_action, cx)),
+                )
+            })
             .when_some(error, |p, message| {
                 p.child(
                     div()
@@ -159,7 +157,7 @@ impl WorkspaceView {
             })
             // Commit message input (shown when action is Commit)
             .when(panel_action == PanelAction::Commit && !is_busy, |el| {
-                el.child(self.render_commit_input(&commit_message, cx))
+                el.child(self.render_commit_input(&commit_message, window, cx))
             })
             .child(
                 div()
@@ -168,33 +166,26 @@ impl WorkspaceView {
                     .min_h_0()
                     .overflow_scroll()
                     .children(if changes.is_empty() {
-                        let mut info_items: Vec<AnyElement> = vec![div()
-                            .px_3()
-                            .py_2()
-                            .text_xs()
-                            .text_color(t.text_dim)
-                            .child("Working tree clean")
-                            .into_any_element()];
-
+                        let mut label = "Working tree clean".to_string();
                         if branch_status.commits_ahead > 0 {
                             let n = branch_status.commits_ahead;
-                            let label = if n == 1 {
-                                "1 commit ahead".to_string()
+                            if n == 1 {
+                                label.push_str(" · 1 commit ahead");
                             } else {
-                                format!("{n} commits ahead")
-                            };
-                            info_items.push(
-                                div()
-                                    .px_3()
-                                    .pb_1()
-                                    .text_xs()
-                                    .text_color(t.text_dim)
-                                    .child(label)
-                                    .into_any_element(),
-                            );
+                                label.push_str(&format!(" · {n} commits ahead"));
+                            }
                         }
-
-                        info_items
+                        vec![div()
+                            .flex_1()
+                            .min_h_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .py_4()
+                            .text_xs()
+                            .text_color(t.text_dim)
+                            .child(label)
+                            .into_any_element()]
                     } else {
                         changes
                             .iter()
@@ -209,6 +200,7 @@ impl WorkspaceView {
                 .child(
                     div()
                         .id("checks-backdrop")
+                        .occlude()
                         .absolute()
                         .top(px(-2000.))
                         .left(px(-2000.))
@@ -216,7 +208,7 @@ impl WorkspaceView {
                         .h(px(10000.))
                         .on_mouse_up(MouseButton::Left, backdrop_listener),
                 )
-                .child(self.render_checks_popover(&branch_status, &repo_capabilities, cx));
+                .child(self.render_checks_popover(&branch_status, cx));
         }
 
         panel_div.into_any_element()
@@ -246,16 +238,18 @@ impl WorkspaceView {
             if auto_merge_enabled {
                 return div()
                     .id("action-auto-merge")
+                    .w_full()
                     .px_2()
-                    .py(px(2.))
+                    .py(px(4.))
                     .rounded_md()
                     .text_xs()
-                    .bg(t.accent_purple)
-                    .text_color(t.bg_panel)
+                    .text_center()
+                    .bg(t.bg_elevated)
+                    .text_color(t.accent_purple)
                     .when(is_busy, |el| el.opacity(0.5))
                     .when(!is_busy, |el| {
                         el.cursor_pointer()
-                            .hover(|style| style.opacity(0.85))
+                            .hover(|style| style.bg(t.bg_elevated_hover))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|this, _event, window, cx| {
@@ -271,16 +265,18 @@ impl WorkspaceView {
             if !all_checks_pass && repo_capabilities.auto_merge_allowed {
                 return div()
                     .id("action-auto-merge")
+                    .w_full()
                     .px_2()
-                    .py(px(2.))
+                    .py(px(4.))
                     .rounded_md()
                     .text_xs()
-                    .bg(t.accent_green)
-                    .text_color(gpui::rgb(0x1e1e1e))
+                    .text_center()
+                    .bg(t.bg_elevated)
+                    .text_color(t.accent_green)
                     .when(is_busy, |el| el.opacity(0.5))
                     .when(!is_busy, |el| {
                         el.cursor_pointer()
-                            .hover(|style| style.opacity(0.85))
+                            .hover(|style| style.bg(t.bg_elevated_hover))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|this, _event, window, cx| {
@@ -298,11 +294,11 @@ impl WorkspaceView {
             }
         }
 
-        let (button_id, label, bg_color): (&str, &str, Hsla) = match action {
-            PanelAction::Commit => ("action-commit", "Commit", t.accent_green),
-            PanelAction::Amend => ("action-amend", "Amend", t.accent_green),
-            PanelAction::CreatePR => ("action-create-pr", "Create PR", t.accent_green),
-            PanelAction::Rebase => ("action-rebase", "Rebase & Merge", t.accent_green),
+        let (button_id, label, text_color): (&str, &str, Hsla) = match action {
+            PanelAction::Commit => ("action-commit", "Commit", t.text_primary),
+            PanelAction::Amend => ("action-amend", "Amend", t.text_primary),
+            PanelAction::CreatePR => ("action-create-pr", "Create PR", t.accent_blue),
+            PanelAction::Rebase => ("action-rebase", "Rebase & Merge", t.text_primary),
             PanelAction::CloseSession => ("action-close", "Close Session", t.accent_red),
             PanelAction::None => return div().into_any_element(),
         };
@@ -311,16 +307,18 @@ impl WorkspaceView {
 
         div()
             .id(button_id)
+            .w_full()
             .px_2()
-            .py(px(2.))
+            .py(px(4.))
             .rounded_md()
             .text_xs()
-            .bg(bg_color)
-            .text_color(gpui::rgb(0x1e1e1e))
+            .text_center()
+            .bg(t.bg_elevated)
+            .text_color(text_color)
             .when(is_busy, |el| el.opacity(0.5))
             .when(!is_busy, |el| {
                 el.cursor_pointer()
-                    .hover(|style| style.opacity(0.85))
+                    .hover(|style| style.bg(t.bg_elevated_hover))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(move |this, event, window, cx| match action_clone {
@@ -337,32 +335,35 @@ impl WorkspaceView {
             .into_any_element()
     }
 
-    fn render_action_status(&self, phase: &ActionPhase, cx: &mut Context<Self>) -> AnyElement {
+    fn render_action_or_status(
+        &self,
+        action: &PanelAction,
+        phase: &ActionPhase,
+        button: AnyElement,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let t = theme();
 
         match phase {
-            ActionPhase::Idle => div().into_any_element(),
             ActionPhase::Working(label) => div()
-                .mx_3()
-                .mt_1()
-                .mb_1()
+                .w_full()
                 .px_2()
-                .py_1()
-                .text_xs()
+                .py(px(4.))
                 .rounded_md()
-                .bg(gpui::rgba(0xffffff08))
+                .text_xs()
+                .text_center()
+                .bg(t.bg_elevated)
                 .text_color(t.text_muted)
+                .opacity(0.7)
                 .child(label.clone())
                 .into_any_element(),
             ActionPhase::Error(msg) => div()
                 .id("action-error")
-                .mx_3()
-                .mt_1()
-                .mb_1()
+                .w_full()
                 .px_2()
-                .py_1()
-                .text_xs()
+                .py(px(4.))
                 .rounded_md()
+                .text_xs()
                 .bg(t.error_bg)
                 .flex()
                 .items_center()
@@ -389,10 +390,17 @@ impl WorkspaceView {
                         .child(icon_x().size_3p5().text_color(t.text_dim)),
                 )
                 .into_any_element(),
+            ActionPhase::Idle => {
+                if *action != PanelAction::None {
+                    button
+                } else {
+                    div().into_any_element()
+                }
+            }
         }
     }
 
-    fn render_commit_input(&self, message: &str, cx: &mut Context<Self>) -> AnyElement {
+    fn render_commit_input(&self, message: &str, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
         let display_text = if message.is_empty() {
             "Enter commit message...".to_string()
@@ -400,11 +408,15 @@ impl WorkspaceView {
             message.to_string()
         };
         let is_placeholder = message.is_empty();
+        let is_focused = self.commit_input_focus.is_focused(window);
 
         div()
             .mx_3()
-            .mt_1()
+            .mt_2()
             .mb_1()
+            .border_t_1()
+            .border_color(t.border_subtle)
+            .pt_2()
             .child(
                 div()
                     .id("commit-input")
@@ -414,8 +426,16 @@ impl WorkspaceView {
                     .text_xs()
                     .rounded_md()
                     .border_1()
-                    .border_color(t.border_subtle)
-                    .bg(gpui::rgba(0xffffff08))
+                    .border_color(if is_focused {
+                        t.accent_blue
+                    } else {
+                        t.border_subtle
+                    })
+                    .bg(if is_focused {
+                        gpui::rgba(0xffffff10)
+                    } else {
+                        gpui::rgba(0xffffff08)
+                    })
                     .text_color(if is_placeholder {
                         t.text_dim
                     } else {
@@ -528,8 +548,7 @@ impl WorkspaceView {
     fn render_checks_popover(
         &self,
         branch_status: &BranchStatus,
-        repo_capabilities: &RepoCapabilities,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> AnyElement {
         let t = theme();
 
@@ -544,13 +563,6 @@ impl WorkspaceView {
         });
 
         let pr_url = branch_status.pr_url.clone();
-        let pr_is_open = branch_status
-            .pr_state
-            .as_deref()
-            .map(|s| s.eq_ignore_ascii_case("OPEN"))
-            .unwrap_or(true)
-            && pr_url.is_some()
-            && !branch_status.pr_merged;
 
         let mut popover = div()
             .id("checks-popover")
@@ -564,9 +576,8 @@ impl WorkspaceView {
             .bg(gpui::rgb(0x2d2d2d))
             .shadow_lg()
             .overflow_hidden()
-            .on_mouse_move(|_event, _window, _cx| {
-                // Stop mouse events from reaching elements behind the popover
-            });
+            .pb_1()
+            .occlude();
 
         // PR state row at top (if PR exists)
         if let Some(url) = &pr_url {
@@ -654,51 +665,6 @@ impl WorkspaceView {
                 .enumerate()
                 .map(|(i, check)| Self::render_popover_check_row(check, i)),
         );
-
-        // Auto-merge toggle row (only when repo allows it and PR is open)
-        if repo_capabilities.auto_merge_allowed && pr_is_open {
-            let is_auto = branch_status.auto_merge_enabled;
-            popover = popover.child(
-                div()
-                    .id("popover-auto-merge-toggle")
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_2()
-                    .py(px(6.))
-                    .border_t_1()
-                    .border_color(t.border_subtle)
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.text_secondary)
-                            .child("Auto-merge"),
-                    )
-                    .child(
-                        div()
-                            .id("auto-merge-btn")
-                            .cursor_pointer()
-                            .px_2()
-                            .py(px(2.))
-                            .rounded_sm()
-                            .text_xs()
-                            .bg(if is_auto { t.accent_green } else { t.bg_surface })
-                            .text_color(if is_auto {
-                                t.bg_panel
-                            } else {
-                                t.text_muted
-                            })
-                            .hover(|style| style.opacity(0.85))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    this.on_toggle_pr_auto_merge(window, cx);
-                                }),
-                            )
-                            .child(if is_auto { "On" } else { "Off" }),
-                    ),
-            );
-        }
 
         popover.into_any_element()
     }
@@ -827,6 +793,12 @@ impl WorkspaceView {
             } else {
                 t.transparent
             })
+            .when(is_viewing, |el| {
+                el.border_l_2().border_color(t.accent_blue)
+            })
+            .when(!popover_open, |el| {
+                el.hover(|style| style.bg(t.hover_overlay))
+            })
             // Checkbox
             .child(
                 div()
@@ -841,8 +813,8 @@ impl WorkspaceView {
                     .justify_center()
                     .cursor_pointer()
                     .when(is_staged, |el| {
-                        el.bg(t.accent_green)
-                            .border_color(t.accent_green)
+                        el.bg(t.accent_blue)
+                            .border_color(t.accent_blue)
                             .text_color(gpui::rgb(0x1e1e1e))
                             .child(icon_check().size(px(10.)).text_color(gpui::rgb(0x1e1e1e)))
                     })
@@ -864,21 +836,21 @@ impl WorkspaceView {
                     .child(change.status_code.clone()),
             )
             // File path (clickable for diff)
-            .child(
+            .child({
+                let (dir_part, file_part) = match change.path.rfind('/') {
+                    Some(pos) => (
+                        Some(change.path[..=pos].to_string()),
+                        change.path[pos + 1..].to_string(),
+                    ),
+                    None => (None, change.path.clone()),
+                };
                 div()
                     .flex_1()
                     .min_w_0()
                     .overflow_hidden()
-                    .text_sm()
+                    .flex()
+                    .text_xs()
                     .cursor_pointer()
-                    .when(!popover_open, |el| {
-                        el.hover(|style| style.bg(t.hover_overlay))
-                    })
-                    .text_color(if is_viewing {
-                        t.text_primary
-                    } else {
-                        t.text_secondary
-                    })
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(move |this, event, window, cx| {
@@ -891,8 +863,24 @@ impl WorkspaceView {
                             );
                         }),
                     )
-                    .child(change.path.clone()),
-            )
+                    .when_some(dir_part, |el, dir| {
+                        el.child(
+                            div()
+                                .flex_shrink_0()
+                                .text_color(t.text_dim)
+                                .child(dir),
+                        )
+                    })
+                    .child(
+                        div()
+                            .text_color(if is_viewing {
+                                t.text_primary
+                            } else {
+                                t.text_secondary
+                            })
+                            .child(file_part),
+                    )
+            })
             // +/- stats on hover
             .child(
                 div()

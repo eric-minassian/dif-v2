@@ -292,6 +292,7 @@ pub fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
 
 pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
     let commits_ahead = commits_ahead_of_main(worktree).unwrap_or(0);
+    let branch_name = super::get_branch_name(worktree).ok();
     let (pr_url, pr_merged, pr_number, pr_state, auto_merge_enabled) =
         match check_pr_status(worktree) {
             Ok(Some(info)) => (
@@ -318,5 +319,6 @@ pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
         pr_state,
         checks,
         auto_merge_enabled,
+        branch_name,
     }
 }

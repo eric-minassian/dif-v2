@@ -22,8 +22,9 @@ pub(crate) fn resize_handle(
         .w(px(2.))
         .h_full()
         .flex_shrink_0()
+        .bg(t.border_subtle)
         .cursor(CursorStyle::ResizeLeftRight)
-        .hover(|style| style.bg(t.accent))
+        .hover(|style| style.bg(t.accent_blue))
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, _, _window, cx| {

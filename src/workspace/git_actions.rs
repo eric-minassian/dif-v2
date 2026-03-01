@@ -90,7 +90,18 @@ impl WorkspaceView {
             return;
         };
 
-        let (files, message) = {
+        // Resolve the commit message from the session name
+        let message = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo)
+            .and_then(|p| p.sessions.iter().find(|s| s.id == session_id))
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+
+        let files = {
             let Some(runtime) = self.state.runtimes.get(&repo) else {
                 return;
             };
@@ -101,13 +112,10 @@ impl WorkspaceView {
             if files.is_empty() {
                 return;
             }
-            let Some(session_runtime) = runtime.session_runtimes.get(&session_id) else {
-                return;
-            };
-            if session_runtime.commit_message.trim().is_empty() {
+            if message.trim().is_empty() {
                 return;
             }
-            (files, session_runtime.commit_message.clone())
+            files
         };
 
         // Validate conventional commit format if enforced
@@ -140,7 +148,6 @@ impl WorkspaceView {
 
         let view = cx.entity().clone();
         let repo_clone = repo.clone();
-        let session_id_clone = session_id.clone();
 
         window
             .spawn(cx, async move |cx| {
@@ -184,11 +191,6 @@ impl WorkspaceView {
                                 Ok(()) => {
                                     rt.staged_files.clear();
                                     rt.action_phase = ActionPhase::Idle;
-                                    if let Some(session_rt) =
-                                        rt.session_runtimes.get_mut(&session_id_clone)
-                                    {
-                                        session_rt.commit_message.clear();
-                                    }
                                 }
                                 Err(e) => {
                                     rt.action_phase = ActionPhase::Error(format!("Push: {e}"));
@@ -285,6 +287,9 @@ impl WorkspaceView {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };
+        let Some(session_id) = self.state.selected_session.clone() else {
+            return;
+        };
         let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
             return;
         };
@@ -293,6 +298,17 @@ impl WorkspaceView {
         }
         runtime.action_phase = ActionPhase::Working("Creating PR...".into());
         cx.notify();
+
+        // Use session name as PR title
+        let pr_title = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo)
+            .and_then(|p| p.sessions.iter().find(|s| s.id == session_id))
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| "changes".to_string());
 
         let working_dir = self.working_dir(&repo);
 
@@ -303,20 +319,11 @@ impl WorkspaceView {
             .spawn(cx, async move |cx| {
                 let dir = working_dir.clone();
 
-                let branch_name = cx
-                    .background_executor()
-                    .spawn({
-                        let dir = dir.clone();
-                        async move { git::get_branch_name(&dir) }
-                    })
-                    .await
-                    .unwrap_or_else(|_| "changes".to_string());
-
                 let pr_result = cx
                     .background_executor()
                     .spawn({
                         let dir = dir.clone();
-                        async move { git::create_pr(&dir, &branch_name) }
+                        async move { git::create_pr(&dir, &pr_title) }
                     })
                     .await;
 

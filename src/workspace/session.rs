@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use gpui::{AppContext, Context, Focusable, MouseUpEvent, Window};
 
 use crate::git;
+use crate::git::conventional::is_conventional_commit;
 use crate::state::SavedSession;
 use crate::text_input::{TextInput, TextInputEvent};
 
@@ -10,6 +11,7 @@ use super::helpers::pick_initial_session;
 use super::WorkspaceView;
 
 impl WorkspaceView {
+    /// "+" button on project row: begin creating a session for that project.
     pub(crate) fn on_add_session(
         &mut self,
         repo_root: PathBuf,
@@ -17,6 +19,121 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.begin_creating_session(repo_root, window, cx);
+    }
+
+    /// Cmd+N: create a new session in the currently selected project.
+    pub(crate) fn on_new_session(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo_root) = self.state.selected_repo.clone() else {
+            return;
+        };
+        self.begin_creating_session(repo_root, window, cx);
+    }
+
+    /// Show an inline text input in the sidebar for entering the commit message / session name.
+    fn begin_creating_session(
+        &mut self,
+        repo_root: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Ensure the project exists and is valid
+        let project_exists = self
+            .state
+            .config
+            .projects
+            .iter()
+            .any(|p| p.repo_root == repo_root && p.last_known_valid);
+        if !project_exists {
+            return;
+        }
+
+        // Expand the project if collapsed
+        self.state.collapsed_projects.remove(&repo_root);
+
+        let input = cx.new(|cx| TextInput::new(String::new(), window, cx));
+        let event_sub = cx.subscribe_in(&input, window, {
+            let repo_root = repo_root.clone();
+            move |this, _input, event, window, cx| match event {
+                TextInputEvent::Confirm(message) => {
+                    this.on_create_session_confirm(
+                        repo_root.clone(),
+                        message.clone(),
+                        window,
+                        cx,
+                    );
+                }
+                TextInputEvent::Cancel => {
+                    this.creating_session = None;
+                    cx.notify();
+                }
+            }
+        });
+        let blur_sub = cx.on_blur(
+            &input.read(cx).focus_handle(cx),
+            window,
+            {
+                let repo_root = repo_root.clone();
+                move |this, window, cx| {
+                    if let Some((_, input_entity, _, _, _)) = this.creating_session.take() {
+                        let message = input_entity.read(cx).text().trim().to_string();
+                        if message.is_empty() {
+                            // Cancel on blur with empty text
+                            cx.notify();
+                        } else {
+                            // Confirm on blur with non-empty text
+                            this.on_create_session_confirm(
+                                repo_root.clone(),
+                                message,
+                                window,
+                                cx,
+                            );
+                        }
+                    }
+                }
+            },
+        );
+        self.creating_session = Some((repo_root, input, event_sub, blur_sub, None));
+        cx.notify();
+    }
+
+    /// Called when the user confirms the session name (Enter or blur with text).
+    fn on_create_session_confirm(
+        &mut self,
+        repo_root: PathBuf,
+        message: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if message.is_empty() {
+            self.creating_session = None;
+            cx.notify();
+            return;
+        }
+
+        // Validate conventional commit format if enforced — keep input open on failure
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo_root)
+        {
+            if project.settings.enforce_conventional_commits && !is_conventional_commit(&message) {
+                if let Some((_, _, _, _, ref mut error)) = self.creating_session {
+                    *error = Some("Must follow Conventional Commits: type[(scope)]: description".into());
+                }
+                cx.notify();
+                return;
+            }
+        }
+
+        self.creating_session = None;
+
         let Some(project) = self
             .state
             .config
@@ -28,16 +145,14 @@ impl WorkspaceView {
         };
 
         let new_id = project.next_session_id();
-        let new_name = project.next_session_name();
-        let display_name = project.display_name.clone();
 
         project.sessions.push(SavedSession {
             id: new_id.clone(),
-            name: new_name,
+            name: message.clone(),
             worktree_path: None,
         });
 
-        match git::create_worktree(&repo_root, &display_name, &new_id) {
+        match git::create_worktree(&repo_root, &message) {
             Ok(wt_path) => {
                 self.run_init_commands(&repo_root, &wt_path);
                 if let Some(project) = self
@@ -181,6 +296,25 @@ impl WorkspaceView {
             cx.notify();
             return;
         }
+
+        // Validate conventional commit format if enforced
+        if let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo_root)
+        {
+            if project.settings.enforce_conventional_commits && !is_conventional_commit(&new_name) {
+                self.state.flash_error = Some(
+                    "Session name must follow Conventional Commits: type[(scope)]: description"
+                        .into(),
+                );
+                cx.notify();
+                return;
+            }
+        }
+
         if let Some(project) = self
             .state
             .config
@@ -194,58 +328,6 @@ impl WorkspaceView {
         }
         self.persist_config();
         cx.notify();
-    }
-
-    /// Cmd+N: create a new session in the currently selected project.
-    pub(crate) fn on_new_session(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(repo_root) = self.state.selected_repo.clone() else {
-            return;
-        };
-        let Some(project) = self
-            .state
-            .config
-            .projects
-            .iter_mut()
-            .find(|p| p.repo_root == repo_root)
-        else {
-            return;
-        };
-
-        let new_id = project.next_session_id();
-        let new_name = project.next_session_name();
-        let display_name = project.display_name.clone();
-
-        project.sessions.push(SavedSession {
-            id: new_id.clone(),
-            name: new_name,
-            worktree_path: None,
-        });
-
-        match git::create_worktree(&repo_root, &display_name, &new_id) {
-            Ok(wt_path) => {
-                self.run_init_commands(&repo_root, &wt_path);
-                if let Some(project) = self
-                    .state
-                    .config
-                    .projects
-                    .iter_mut()
-                    .find(|p| p.repo_root == repo_root)
-                {
-                    if let Some(session) = project.sessions.iter_mut().find(|s| s.id == new_id) {
-                        session.worktree_path = Some(wt_path);
-                    }
-                }
-            }
-            Err(error) => {
-                self.state.flash_error = Some(format!("Failed to create worktree: {error}"));
-            }
-        }
-
-        self.activate_session(repo_root, new_id, window, cx);
     }
 
     pub(crate) fn on_close_session(

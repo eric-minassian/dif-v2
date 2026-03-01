@@ -28,7 +28,6 @@ pub struct SessionRuntime {
     pub side_tabs: Vec<TerminalTab>,
     pub selected_side_tab: Option<String>,
     pub next_tab_id: u64,
-    pub commit_message: String,
     pub cached_branch_status: Option<BranchStatus>,
     pub cached_repo_capabilities: Option<RepoCapabilities>,
 }
@@ -41,7 +40,6 @@ impl Default for SessionRuntime {
             side_tabs: Vec::new(),
             selected_side_tab: None,
             next_tab_id: 1,
-            commit_message: String::new(),
             cached_branch_status: None,
             cached_repo_capabilities: None,
         }

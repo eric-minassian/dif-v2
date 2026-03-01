@@ -20,15 +20,52 @@ fn generate_short_id() -> String {
         .collect()
 }
 
+pub fn slugify_message(message: &str) -> String {
+    let slug: String = message
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    // Collapse consecutive hyphens and trim leading/trailing hyphens
+    let mut result = String::new();
+    let mut prev_hyphen = true; // treat start as hyphen to trim leading
+    for c in slug.chars() {
+        if c == '-' {
+            if !prev_hyphen {
+                result.push('-');
+            }
+            prev_hyphen = true;
+        } else {
+            result.push(c);
+            prev_hyphen = false;
+        }
+    }
+    // Trim trailing hyphen
+    if result.ends_with('-') {
+        result.pop();
+    }
+    // Truncate to 50 chars on a clean boundary
+    if result.len() > 50 {
+        result.truncate(50);
+        if result.ends_with('-') {
+            result.pop();
+        }
+    }
+    result
+}
+
 pub fn create_worktree(
     repo_root: &Path,
-    project_name: &str,
-    _session_id: &str,
+    commit_message: &str,
 ) -> Result<PathBuf, String> {
     let home = home_dir().ok_or("could not determine home directory")?;
     let dif_dir = home.join(".dif");
 
-    let sanitized_name = project_name
+    let repo_name = repo_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("repo");
+    let sanitized_name = repo_name
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
         .collect::<String>();
@@ -38,8 +75,9 @@ pub fn create_worktree(
         .map_err(|e| format!("failed to create ~/.dif/{sanitized_name}: {e}"))?;
 
     let short_id = generate_short_id();
+    let slug = slugify_message(commit_message);
     let worktree_path = project_dir.join(&short_id);
-    let branch_name = format!("dif/{sanitized_name}-{short_id}");
+    let branch_name = format!("dif/{slug}-{short_id}");
 
     let branch = default_branch(repo_root);
 

@@ -61,19 +61,6 @@ impl SavedProject {
         (max_id + 1).to_string()
     }
 
-    pub fn next_session_name(&self) -> String {
-        let max_num = self
-            .sessions
-            .iter()
-            .filter_map(|s| {
-                s.name
-                    .strip_prefix("Session ")
-                    .and_then(|n| n.parse::<u64>().ok())
-            })
-            .max()
-            .unwrap_or(0);
-        format!("Session {}", max_num + 1)
-    }
 }
 
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]

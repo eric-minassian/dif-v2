@@ -339,6 +339,45 @@ impl WorkspaceView {
                                         ),
                                 );
                             }
+
+                            // Inline text input for creating a new session
+                            if let Some((creating_repo, input_entity, _, _, error)) =
+                                &self.creating_session
+                            {
+                                if creating_repo == &project.repo_root {
+                                    let has_error = error.is_some();
+                                    let mut row = div()
+                                        .id("creating-session-row")
+                                        .flex()
+                                        .flex_col()
+                                        .pl(px(28.))
+                                        .pr_3()
+                                        .py(px(6.))
+                                        .bg(t.selection_medium)
+                                        .border_l_2()
+                                        .border_color(if has_error {
+                                            t.accent_red
+                                        } else {
+                                            t.accent_blue
+                                        })
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .child(input_entity.clone()),
+                                        );
+                                    if let Some(msg) = error {
+                                        row = row.child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.accent_red)
+                                                .pt(px(2.))
+                                                .child(msg.clone()),
+                                        );
+                                    }
+                                    container = container.child(row);
+                                }
+                            }
                         }
 
                         container

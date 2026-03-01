@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/eric-minassian/dif-v2/compare/v0.6.0...v0.6.1) (2026-03-01)
+
+
+### Bug Fixes
+
+* better terminal support ([7e585bd](https://github.com/eric-minassian/dif-v2/commit/7e585bd775e58be5259ee2ec9ffb2b7726f903c8))
+
 ## [0.6.0](https://github.com/eric-minassian/dif-v2/compare/v0.5.0...v0.6.0) (2026-03-01)
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/eric-minassian/dif-v2/compare/v0.6.1...v0.7.0) (2026-03-01)
+
+
+### Features
+
+* ui improvements ([c3738a5](https://github.com/eric-minassian/dif-v2/commit/c3738a50a7fd68ddf667355a22746500c61539ca))
+
+
+### Bug Fixes
+
+* automatic session creation ([9789d9e](https://github.com/eric-minassian/dif-v2/commit/9789d9eeea21e8a1f27bfee6dca9ece4be3f8de5))
+* separate codebase ([ee0f772](https://github.com/eric-minassian/dif-v2/commit/ee0f772e96bef3baa1d8bbe8108191040d549b99))
+
 ## [0.6.1](https://github.com/eric-minassian/dif-v2/compare/v0.6.0...v0.6.1) (2026-03-01)
 
 

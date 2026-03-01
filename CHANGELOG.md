@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/eric-minassian/dif-v2/compare/v0.7.0...v0.8.0) (2026-03-01)
+
+
+### Features
+
+* keybindings ([b44124d](https://github.com/eric-minassian/dif-v2/commit/b44124d36059e8c3d389e608377e06fa5b4b0f5b))
+* named session creation ([55fefe9](https://github.com/eric-minassian/dif-v2/commit/55fefe943f76547470842d8eb124fc1af7252f23))
+
 ## [0.7.0](https://github.com/eric-minassian/dif-v2/compare/v0.6.1...v0.7.0) (2026-03-01)
 
 

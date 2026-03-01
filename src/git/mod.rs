@@ -3,6 +3,7 @@ pub(crate) mod conventional;
 pub(crate) mod diff;
 mod repo;
 pub(crate) mod status;
+pub(crate) mod syntax;
 mod worktree;
 
 #[cfg(test)]

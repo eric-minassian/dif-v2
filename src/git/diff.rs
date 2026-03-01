@@ -1,9 +1,11 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use similar::TextDiff;
 
-use crate::state::{DiffData, SplitLine, SplitLineKind};
+use crate::state::{DiffData, DiffDisplayRow, SplitLine, SplitLineKind};
 
+use super::syntax::highlight_lines;
 use super::try_run_git;
 
 /// Get the committed (HEAD) version of a file from git.
@@ -52,18 +54,33 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
     let mut old_lineno: u32 = 1;
     let mut new_lineno: u32 = 1;
 
+    // Highlight both sides
+    let old_highlights = highlight_lines(old, file_path);
+    let new_highlights = highlight_lines(new, file_path);
+
     for op in diff.ops() {
         match op {
             similar::DiffOp::Equal {
                 old_index, len, ..
             } => {
-                for &text in &diff.old_slices()[*old_index..*old_index + *len] {
+                for i in 0..*len {
+                    let text = diff.old_slices()[*old_index + i];
+                    let old_runs = old_highlights
+                        .get((old_lineno - 1) as usize)
+                        .cloned()
+                        .unwrap_or_default();
+                    let new_runs = new_highlights
+                        .get((new_lineno - 1) as usize)
+                        .cloned()
+                        .unwrap_or_default();
                     lines.push(SplitLine {
                         old_lineno: Some(old_lineno),
                         new_lineno: Some(new_lineno),
                         old_text: strip_newline(text),
                         new_text: strip_newline(text),
                         kind: SplitLineKind::Equal,
+                        old_syntax_runs: old_runs,
+                        new_syntax_runs: new_runs,
                     });
                     old_lineno += 1;
                     new_lineno += 1;
@@ -74,12 +91,18 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
             } => {
                 for i in 0..*old_len {
                     let text = diff.old_slices()[*old_index + i];
+                    let old_runs = old_highlights
+                        .get((old_lineno - 1) as usize)
+                        .cloned()
+                        .unwrap_or_default();
                     lines.push(SplitLine {
                         old_lineno: Some(old_lineno),
                         new_lineno: None,
                         old_text: strip_newline(text),
                         new_text: String::new(),
                         kind: SplitLineKind::Delete,
+                        old_syntax_runs: old_runs,
+                        new_syntax_runs: Vec::new(),
                     });
                     old_lineno += 1;
                     deletions += 1;
@@ -90,12 +113,18 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
             } => {
                 for i in 0..*new_len {
                     let text = diff.new_slices()[*new_index + i];
+                    let new_runs = new_highlights
+                        .get((new_lineno - 1) as usize)
+                        .cloned()
+                        .unwrap_or_default();
                     lines.push(SplitLine {
                         old_lineno: None,
                         new_lineno: Some(new_lineno),
                         old_text: String::new(),
                         new_text: strip_newline(text),
                         kind: SplitLineKind::Insert,
+                        old_syntax_runs: Vec::new(),
+                        new_syntax_runs: new_runs,
                     });
                     new_lineno += 1;
                     additions += 1;
@@ -121,6 +150,22 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                     } else {
                         String::new()
                     };
+                    let old_runs = if has_old {
+                        old_highlights
+                            .get((old_lineno - 1) as usize)
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    let new_runs = if has_new {
+                        new_highlights
+                            .get((new_lineno - 1) as usize)
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
                     lines.push(SplitLine {
                         old_lineno: if has_old {
                             let n = old_lineno;
@@ -139,6 +184,8 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                         old_text,
                         new_text,
                         kind: SplitLineKind::Replace,
+                        old_syntax_runs: old_runs,
+                        new_syntax_runs: new_runs,
                     });
                     if has_old {
                         deletions += 1;
@@ -151,12 +198,78 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
         }
     }
 
+    let display_rows = build_display_rows(&lines, &HashSet::new());
+
     DiffData {
         file_path: file_path.to_string(),
         lines,
+        display_rows,
+        expanded_sections: HashSet::new(),
         additions,
         deletions,
     }
+}
+
+const CONTEXT_LINES: usize = 3;
+
+/// Build display rows from diff lines, collapsing unchanged regions.
+///
+/// Changed lines and their surrounding context (CONTEXT_LINES before/after)
+/// are visible. Consecutive unchanged lines outside context are collapsed
+/// into a single `Collapsed` row.
+pub(crate) fn build_display_rows(
+    lines: &[SplitLine],
+    expanded_sections: &HashSet<usize>,
+) -> Vec<DiffDisplayRow> {
+    let len = lines.len();
+    if len == 0 {
+        return Vec::new();
+    }
+
+    // Mark which lines are "visible" (changed or within context of a change)
+    let mut visible = vec![false; len];
+    for (i, line) in lines.iter().enumerate() {
+        if line.kind != SplitLineKind::Equal {
+            let start = i.saturating_sub(CONTEXT_LINES);
+            let end = (i + CONTEXT_LINES + 1).min(len);
+            for v in &mut visible[start..end] {
+                *v = true;
+            }
+        }
+    }
+
+    let mut rows = Vec::new();
+    let mut i = 0;
+    while i < len {
+        if visible[i] {
+            rows.push(DiffDisplayRow::Line(i));
+            i += 1;
+        } else {
+            // Start of a collapsed section
+            let start = i;
+            while i < len && !visible[i] {
+                i += 1;
+            }
+            let hidden_count = i - start;
+            if expanded_sections.contains(&start) {
+                // This section has been expanded - show header + all lines
+                rows.push(DiffDisplayRow::ExpandedHeader {
+                    hidden_count,
+                    start_index: start,
+                });
+                for j in start..i {
+                    rows.push(DiffDisplayRow::Line(j));
+                }
+            } else {
+                rows.push(DiffDisplayRow::Collapsed {
+                    hidden_count,
+                    start_index: start,
+                });
+            }
+        }
+    }
+
+    rows
 }
 
 fn strip_newline(s: &str) -> String {

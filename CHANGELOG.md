@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/eric-minassian/dif-v2/compare/v0.5.0...v0.6.0) (2026-03-01)
+
+
+### Features
+
+* drag and drop ([c202ba3](https://github.com/eric-minassian/dif-v2/commit/c202ba33b415438cd18dbf3b063850763d874892))
+* sessions switching ([08b428f](https://github.com/eric-minassian/dif-v2/commit/08b428f9e6fca4b8915015d8cd980add4e282c28))
+* toggle auto merge ([8b547bf](https://github.com/eric-minassian/dif-v2/commit/8b547bf8f050825ca0e32e064d461a6fdd10c0d3))
+
 ## [0.5.0](https://github.com/eric-minassian/dif-v2/compare/v0.4.0...v0.5.0) (2026-02-28)
 
 

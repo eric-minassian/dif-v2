@@ -33,6 +33,9 @@ cp "$BINARY" "$APP_DIR/Contents/MacOS/dif"
 # Copy and patch Info.plist
 sed "s/__VERSION__/$VERSION/g" "$REPO_ROOT/Info.plist" > "$APP_DIR/Contents/Info.plist"
 
+# Copy app icon
+cp "$REPO_ROOT/assets/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+
 echo "Built: $APP_DIR"
 
 # Optional: install to /Applications

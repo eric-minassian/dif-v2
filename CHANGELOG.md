@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/eric-minassian/dif-v2/compare/v0.8.0...v0.9.0) (2026-03-03)
+
+
+### Features
+
+* diff improvements ([bca3c9b](https://github.com/eric-minassian/dif-v2/commit/bca3c9bbfd3408dd513a18baa62a90c8071299f2))
+* icon ([5758314](https://github.com/eric-minassian/dif-v2/commit/57583144524f0226f0f33544b98859a9c376a8a8))
+
 ## [0.8.0](https://github.com/eric-minassian/dif-v2/compare/v0.7.0...v0.8.0) (2026-03-01)
 
 

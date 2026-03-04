@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/eric-minassian/dif-v2/compare/v0.9.0...v0.10.0) (2026-03-04)
+
+
+### Features
+
+* terminal testing ([5f4b532](https://github.com/eric-minassian/dif-v2/commit/5f4b532f19ef53417d69c47eff2a25c5aa112e92))
+
 ## [0.9.0](https://github.com/eric-minassian/dif-v2/compare/v0.8.0...v0.9.0) (2026-03-03)
 
 

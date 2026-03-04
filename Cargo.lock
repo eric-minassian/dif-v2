@@ -1315,7 +1315,7 @@ dependencies = [
 
 [[package]]
 name = "dif"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "base64",

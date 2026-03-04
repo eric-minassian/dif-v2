@@ -10,3 +10,5 @@ pub use session::{CursorShape, TerminalSession};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vt_tests;

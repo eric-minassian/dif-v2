@@ -2,3 +2,4 @@
 /build
 /.context
 /.claude
+.zig-cache/

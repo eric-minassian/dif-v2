@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0](https://github.com/eric-minassian/dif-v2/compare/v0.11.0...v0.12.0) (2026-03-07)
+
+
+### Features
+
+* zed terminal feature parity ([02c1e68](https://github.com/eric-minassian/dif-v2/commit/02c1e68cc8ba0271c4b1062754e83f9af27130ad))
+
+
+### Bug Fixes
+
+* remove worktree path ([3949e2a](https://github.com/eric-minassian/dif-v2/commit/3949e2a01f529c778fafbc84ce7d6062191fb6a2))
+* scrolling ([16288d9](https://github.com/eric-minassian/dif-v2/commit/16288d978de1bd4280caf227709e1933bac24bf2))
+* sticky mod key ([d877dac](https://github.com/eric-minassian/dif-v2/commit/d877dac795a2f996765be7398abaf51e2e579923))
+
 ## [0.11.0](https://github.com/eric-minassian/dif-v2/compare/v0.10.1...v0.11.0) (2026-03-07)
 
 

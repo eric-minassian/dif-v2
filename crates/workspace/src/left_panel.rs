@@ -1,8 +1,8 @@
 use gpui::ClickEvent;
 
-use ui::{button, panel, section_header, PanelSide};
-use ui::prelude::*;
 use crate::config::SavedProject;
+use ui::prelude::*;
+use ui::{PanelSide, button, panel, section_header};
 
 use crate::WorkspaceView;
 
@@ -63,12 +63,9 @@ impl WorkspaceView {
             IconName::ChevronDown
         };
 
-        let project_row_id =
-            gpui::ElementId::Name(format!("proj-{}", project.display_name).into());
-        let toggle_id =
-            gpui::ElementId::Name(format!("toggle-{}", project.display_name).into());
-        let select_id =
-            gpui::ElementId::Name(format!("select-{}", project.display_name).into());
+        let project_row_id = gpui::ElementId::Name(format!("proj-{}", project.display_name).into());
+        let toggle_id = gpui::ElementId::Name(format!("toggle-{}", project.display_name).into());
+        let select_id = gpui::ElementId::Name(format!("select-{}", project.display_name).into());
 
         let mut container = v_flex().border_b_1().border_color(t.border_subtle);
 
@@ -107,15 +104,11 @@ impl WorkspaceView {
                         .min_w_0()
                         .overflow_hidden()
                         .when(project.last_known_valid, |row| {
-                            row.cursor_pointer().on_click(
-                                cx.listener(move |this, _event, window, cx| {
-                                    this.on_select_project(
-                                        select_repo.clone(),
-                                        window,
-                                        cx,
-                                    )
-                                }),
-                            )
+                            row.cursor_pointer().on_click(cx.listener(
+                                move |this, _event, window, cx| {
+                                    this.on_select_project(select_repo.clone(), window, cx)
+                                },
+                            ))
                         })
                         .child(
                             div()
@@ -139,11 +132,7 @@ impl WorkspaceView {
                                 IconButton::new("add-session-btn", IconName::Plus)
                                     .icon_size(px(14.))
                                     .on_click(cx.listener(move |this, _event, window, cx| {
-                                        this.on_add_session(
-                                            add_session_repo.clone(),
-                                            window,
-                                            cx,
-                                        )
+                                        this.on_add_session(add_session_repo.clone(), window, cx)
                                     })),
                             )
                         })
@@ -175,11 +164,13 @@ impl WorkspaceView {
             }
 
             // Inline text input for creating a new session
-            if let Some(create) = &self.creating_session {
-                if create.edit.repo_root == project.repo_root {
-                    container = container
-                        .child(Self::render_creating_session_row(&create.edit.input, &create.validation_error));
-                }
+            if let Some(create) = &self.creating_session
+                && create.edit.repo_root == project.repo_root
+            {
+                container = container.child(Self::render_creating_session_row(
+                    &create.edit.input,
+                    &create.validation_error,
+                ));
             }
         }
 
@@ -210,17 +201,12 @@ impl WorkspaceView {
             .as_ref()
             .is_some_and(|r| r.edit.repo_root == project.repo_root && r.session_id == session.id);
 
-        let session_row_id = gpui::ElementId::Name(
-            format!("sess-{}-{}", project.display_name, session.id).into(),
-        );
+        let session_row_id =
+            gpui::ElementId::Name(format!("sess-{}-{}", project.display_name, session.id).into());
 
         let name_content: AnyElement = if is_renaming {
             let input = self.renaming_session.as_ref().unwrap().edit.input.clone();
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(input)
-                .into_any_element()
+            div().flex_1().min_w_0().child(input).into_any_element()
         } else {
             div()
                 .id(gpui::ElementId::Name(
@@ -229,26 +215,19 @@ impl WorkspaceView {
                 .flex_1()
                 .min_w_0()
                 .cursor_pointer()
-                .on_click(cx.listener(
-                    move |this, event: &ClickEvent, window, cx| {
-                        if event.click_count() == 2 {
-                            this.on_rename_session_start(
-                                rename_repo.clone(),
-                                rename_session_id.clone(),
-                                rename_session_name.clone(),
-                                window,
-                                cx,
-                            );
-                        } else if event.click_count() == 1 {
-                            this.activate_session(
-                                session_repo.clone(),
-                                session_id.clone(),
-                                window,
-                                cx,
-                            );
-                        }
-                    },
-                ))
+                .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                    if event.click_count() == 2 {
+                        this.on_rename_session_start(
+                            rename_repo.clone(),
+                            rename_session_id.clone(),
+                            rename_session_name.clone(),
+                            window,
+                            cx,
+                        );
+                    } else if event.click_count() == 1 {
+                        this.activate_session(session_repo.clone(), session_id.clone(), window, cx);
+                    }
+                }))
                 .child(
                     div()
                         .text_sm()
@@ -325,12 +304,7 @@ impl WorkspaceView {
             } else {
                 t.accent_blue
             })
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(input_entity.clone()),
-            );
+            .child(div().flex_1().min_w_0().child(input_entity.clone()));
         if let Some(msg) = error {
             row = row.child(
                 div()
@@ -361,7 +335,11 @@ impl WorkspaceView {
                     .items_center()
                     .gap_1()
                     .text_xs()
-                    .child(Icon::new(IconName::Plus).size(px(12.)).color(Color::Default))
+                    .child(
+                        Icon::new(IconName::Plus)
+                            .size(px(12.))
+                            .color(Color::Default),
+                    )
                     .child("Add")
                     .on_click(cx.listener(|this, _event, window, cx| {
                         this.on_add_project(window, cx);

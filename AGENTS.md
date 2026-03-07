@@ -10,6 +10,7 @@ Dif is a native macOS Git GUI built with Rust and Zed's [GPUI](https://github.co
 
 ```bash
 cargo check           # Fast type-check (CI uses this)
+cargo fmt --all --check # Formatting check (CI uses this)
 cargo build           # Debug build
 cargo build --release # Release build
 cargo run             # Run debug build
@@ -21,6 +22,15 @@ cargo test -p terminal # Run tests in the terminal crate
 ```
 
 Note: `.cargo/config.toml` sets a custom target dir (`/Users/eric/.cargo-targets/dif`) and a `ZIG` env var. CI overrides both (`CARGO_TARGET_DIR=target`, `ZIG=zig`).
+
+## Completion Checklist
+
+Before considering a change done, run:
+
+```bash
+cargo check
+cargo fmt --all --check
+```
 
 ## Architecture
 

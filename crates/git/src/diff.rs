@@ -62,9 +62,7 @@ pub fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffData {
 
     for op in diff.ops() {
         match op {
-            similar::DiffOp::Equal {
-                old_index, len, ..
-            } => {
+            similar::DiffOp::Equal { old_index, len, .. } => {
                 for i in 0..*len {
                     let text = strip_newline(diff.old_slices()[*old_index + i]);
                     let old_runs = old_highlights

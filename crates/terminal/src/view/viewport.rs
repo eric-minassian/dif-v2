@@ -2,8 +2,8 @@ use std::ops::Range;
 
 use gpui::Context;
 
-use super::helpers::split_viewport_lines;
 use super::TerminalView;
+use super::helpers::split_viewport_lines;
 
 impl TerminalView {
     pub(crate) fn feed_output_bytes_to_session(&mut self, bytes: &[u8]) {

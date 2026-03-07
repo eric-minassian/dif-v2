@@ -147,10 +147,13 @@ fn count_file_lines(repo_root: &Path, relative_path: &str) -> Option<u32> {
 
 fn commits_ahead_of_main(worktree: &Path) -> u32 {
     let branch = default_branch(worktree);
-    run_git(worktree, &["rev-list", "--count", &format!("{branch}..HEAD")])
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0)
+    run_git(
+        worktree,
+        &["rev-list", "--count", &format!("{branch}..HEAD")],
+    )
+    .ok()
+    .and_then(|s| s.parse().ok())
+    .unwrap_or(0)
 }
 
 struct PrInfo {

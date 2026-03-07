@@ -1,19 +1,14 @@
 use std::path::PathBuf;
 
-use git;
+use crate::config::SavedProject;
 use crate::picker;
 use ui::prelude::*;
-use crate::config::SavedProject;
 
-use crate::helpers::{pick_initial_selection, pick_initial_session};
 use crate::WorkspaceView;
+use crate::helpers::{pick_initial_selection, pick_initial_session};
 
 impl WorkspaceView {
-    pub(crate) fn on_add_project(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_add_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(path) = picker::choose_folder() else {
             return;
         };
@@ -21,11 +16,7 @@ impl WorkspaceView {
         self.add_project_from_path(path, window, cx);
     }
 
-    pub(crate) fn on_remove_project(
-        &mut self,
-        repo_root: PathBuf,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_remove_project(&mut self, repo_root: PathBuf, cx: &mut Context<Self>) {
         // Collect worktree paths before removing the project
         let worktree_paths: Vec<PathBuf> = self
             .state

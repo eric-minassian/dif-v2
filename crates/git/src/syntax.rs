@@ -34,8 +34,10 @@ pub(crate) fn highlight_lines(content: &str, file_path: &str) -> Vec<Vec<SyntaxR
         .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
     let highlighter = Highlighter::new(&HIGHLIGHT_THEME);
     let mut parse_state = syntect::parsing::ParseState::new(syntax);
-    let mut highlight_state =
-        syntect::highlighting::HighlightState::new(&highlighter, syntect::parsing::ScopeStack::new());
+    let mut highlight_state = syntect::highlighting::HighlightState::new(
+        &highlighter,
+        syntect::parsing::ScopeStack::new(),
+    );
     let mut result = Vec::new();
     let mut line_buf = String::new();
 
@@ -64,12 +66,8 @@ pub(crate) fn highlight_lines(content: &str, file_path: &str) -> Vec<Vec<SyntaxR
             runs.push(SyntaxRun {
                 len,
                 color: syntect_color_to_hsla(style.foreground),
-                bold: style
-                    .font_style
-                    .contains(highlighting::FontStyle::BOLD),
-                italic: style
-                    .font_style
-                    .contains(highlighting::FontStyle::ITALIC),
+                bold: style.font_style.contains(highlighting::FontStyle::BOLD),
+                italic: style.font_style.contains(highlighting::FontStyle::ITALIC),
             });
         }
         result.push(runs);

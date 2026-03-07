@@ -86,7 +86,6 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
     diff_collapsed_text: gpui::rgb(0x58a6ff).into(),
     diff_collapsed_hover: gpui::rgba(0x58a6ff18).into(),
     error_bg: gpui::rgba(0xef292930).into(),
-
 });
 
 pub fn theme() -> &'static Theme {

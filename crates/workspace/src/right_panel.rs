@@ -1,10 +1,10 @@
-use ui::{panel, section_header, PanelSide};
+use crate::runtime::ActionPhase;
 use git::{BranchStatus, RepoCapabilities};
 use ui::prelude::*;
-use crate::runtime::ActionPhase;
+use ui::{PanelSide, panel, section_header};
 
-use crate::panel_action::{derive_panel_action, PanelAction};
 use crate::WorkspaceView;
+use crate::panel_action::{PanelAction, derive_panel_action};
 
 impl WorkspaceView {
     pub(crate) fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -68,12 +68,10 @@ impl WorkspaceView {
         // Build inline CI status icon for header
         let ci_status = self.render_checks_status_icon(branch_status, cx);
 
-        let popover_open =
-            self.state.checks_popover_open && !branch_status.checks.is_empty();
-        let backdrop_listener =
-            cx.listener(|this, _event: &gpui::MouseUpEvent, _window, cx| {
-                this.on_close_checks_popover(cx);
-            });
+        let popover_open = self.state.checks_popover_open && !branch_status.checks.is_empty();
+        let backdrop_listener = cx.listener(|this, _event: &gpui::MouseUpEvent, _window, cx| {
+            this.on_close_checks_popover(cx);
+        });
 
         let mut panel_div = v_flex()
             .relative()
@@ -82,23 +80,26 @@ impl WorkspaceView {
             .border_b_1()
             .border_color(t.border_default)
             .child(
-                section_header("Changes").child(
-                    h_flex()
-                        .gap_2()
-                        .child(ci_status)
-                        .child(pr_link),
-                ),
+                section_header("Changes").child(h_flex().gap_2().child(ci_status).child(pr_link)),
             )
             // Full-width primary action button / status
-            .when(panel_action != PanelAction::None || !matches!(action_phase, ActionPhase::Idle), |el| {
-                el.child(
-                    div()
-                        .px_3()
-                        .pt_2()
-                        .pb_1()
-                        .child(self.render_action_or_status(&panel_action, action_phase, header_action, cx)),
-                )
-            })
+            .when(
+                panel_action != PanelAction::None || !matches!(action_phase, ActionPhase::Idle),
+                |el| {
+                    el.child(
+                        div()
+                            .px_3()
+                            .pt_2()
+                            .pb_1()
+                            .child(self.render_action_or_status(
+                                &panel_action,
+                                action_phase,
+                                header_action,
+                                cx,
+                            )),
+                    )
+                },
+            )
             .when_some(error, |p, message| {
                 p.child(
                     div()
@@ -128,21 +129,25 @@ impl WorkspaceView {
                                 label.push_str(&format!(" · {n} commits ahead"));
                             }
                         }
-                        vec![div()
-                            .flex_1()
-                            .min_h_0()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .py_4()
-                            .text_xs()
-                            .text_color(t.text_dim)
-                            .child(label)
-                            .into_any_element()]
+                        vec![
+                            div()
+                                .flex_1()
+                                .min_h_0()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .py_4()
+                                .text_xs()
+                                .text_color(t.text_dim)
+                                .child(label)
+                                .into_any_element(),
+                        ]
                     } else {
                         changes
                             .iter()
-                            .map(|change| self.render_change_row(change, staged_files, popover_open, cx))
+                            .map(|change| {
+                                self.render_change_row(change, staged_files, popover_open, cx)
+                            })
                             .collect::<Vec<_>>()
                     }),
             );

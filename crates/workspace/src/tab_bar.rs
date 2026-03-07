@@ -1,8 +1,8 @@
 use gpui::Focusable;
 
+use crate::runtime::{SessionRuntime, TerminalTab};
 use ui::empty_state;
 use ui::prelude::*;
-use crate::runtime::{SessionRuntime, TerminalTab};
 
 use crate::WorkspaceView;
 
@@ -75,11 +75,7 @@ impl WorkspaceView {
     }
 
     /// Toggle focus between the main terminal and the active side terminal.
-    pub(crate) fn on_focus_terminal(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_focus_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(session_runtime) = self.selected_session_runtime() else {
             return;
         };
@@ -88,12 +84,7 @@ impl WorkspaceView {
         let side_handle = session_runtime
             .selected_side_tab
             .as_ref()
-            .and_then(|tab_id| {
-                session_runtime
-                    .side_tabs
-                    .iter()
-                    .find(|t| t.id == *tab_id)
-            })
+            .and_then(|tab_id| session_runtime.side_tabs.iter().find(|t| t.id == *tab_id))
             .map(|tab| tab.view.focus_handle(cx));
 
         let main_handle = session_runtime
@@ -124,25 +115,26 @@ impl WorkspaceView {
 
         let tab_bar = self.render_tab_bar(session_runtime, cx);
 
-        let terminal_content =
-            if let Some(selected_id) = &session_runtime.selected_side_tab {
-                if let Some(tab) =
-                    session_runtime.side_tabs.iter().find(|t| t.id == *selected_id)
-                {
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .bg(gpui::black())
-                        .child(tab.view.clone())
-                        .into_any_element()
-                } else {
-                    empty_state("No terminal selected.").into_any_element()
-                }
-            } else if session_runtime.side_tabs.is_empty() {
-                empty_state("Click + to add a terminal.").into_any_element()
+        let terminal_content = if let Some(selected_id) = &session_runtime.selected_side_tab {
+            if let Some(tab) = session_runtime
+                .side_tabs
+                .iter()
+                .find(|t| t.id == *selected_id)
+            {
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .bg(gpui::black())
+                    .child(tab.view.clone())
+                    .into_any_element()
             } else {
                 empty_state("No terminal selected.").into_any_element()
-            };
+            }
+        } else if session_runtime.side_tabs.is_empty() {
+            empty_state("Click + to add a terminal.").into_any_element()
+        } else {
+            empty_state("No terminal selected.").into_any_element()
+        };
 
         v_flex()
             .flex_1()
@@ -211,9 +203,11 @@ impl WorkspaceView {
                         )
                         .icon_size(px(12.))
                         .visible_on_hover("tab-item")
-                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.on_delete_side_tab(delete_tab_id.clone(), cx);
-                        })),
+                        .on_click(cx.listener(
+                            move |this, _event, _window, cx| {
+                                this.on_delete_side_tab(delete_tab_id.clone(), cx);
+                            },
+                        )),
                     )
             }))
             .child(

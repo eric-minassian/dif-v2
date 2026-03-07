@@ -3,12 +3,11 @@ use std::time::Instant;
 
 use gpui::CursorStyle;
 
-use git;
-use git::GitChange;
-use ui::prelude::*;
 use crate::config::{AppConfig, SavedProject};
 use crate::runtime::ProjectRuntime;
 use crate::ui_state::ResizingSidebar;
+use git::GitChange;
+use ui::prelude::*;
 
 use crate::WorkspaceView;
 
@@ -84,13 +83,20 @@ pub(crate) fn apply_git_snapshot(
 
             // Auto-stage new files that weren't in the previous snapshot
             for change in changes {
-                if !runtime.git_snapshot.changes.iter().any(|old| old.path == change.path) {
+                if !runtime
+                    .git_snapshot
+                    .changes
+                    .iter()
+                    .any(|old| old.path == change.path)
+                {
                     runtime.staged_files.insert(change.path.clone());
                 }
             }
 
             // Remove staged paths that no longer appear in changes
-            runtime.staged_files.retain(|p| current_paths.contains(p.as_str()));
+            runtime
+                .staged_files
+                .retain(|p| current_paths.contains(p.as_str()));
 
             runtime.git_snapshot.changes = changes.clone();
             runtime.git_snapshot.last_error = None;
@@ -123,10 +129,10 @@ pub(crate) fn pick_initial_selection(config: &AppConfig) -> Option<PathBuf> {
 
 pub(crate) fn pick_initial_session(config: &AppConfig, repo: &Path) -> Option<String> {
     let project = config.projects.iter().find(|p| p.repo_root == repo)?;
-    if let Some(last) = &project.last_selected_session {
-        if project.sessions.iter().any(|s| s.id == *last) {
-            return Some(last.clone());
-        }
+    if let Some(last) = &project.last_selected_session
+        && project.sessions.iter().any(|s| s.id == *last)
+    {
+        return Some(last.clone());
     }
     project.sessions.first().map(|s| s.id.clone())
 }

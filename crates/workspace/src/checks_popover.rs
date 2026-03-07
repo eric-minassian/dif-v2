@@ -27,11 +27,20 @@ impl WorkspaceView {
             .count();
 
         let status_icon = if fail_count > 0 {
-            Icon::new(IconName::X).size(px(14.)).color(Color::Red).into_any_element()
+            Icon::new(IconName::X)
+                .size(px(14.))
+                .color(Color::Red)
+                .into_any_element()
         } else if pending_count > 0 {
-            Icon::new(IconName::CircleDot).size(px(14.)).color(Color::Yellow).into_any_element()
+            Icon::new(IconName::CircleDot)
+                .size(px(14.))
+                .color(Color::Yellow)
+                .into_any_element()
         } else {
-            Icon::new(IconName::Check).size(px(14.)).color(Color::Green).into_any_element()
+            Icon::new(IconName::Check)
+                .size(px(14.))
+                .color(Color::Green)
+                .into_any_element()
         };
 
         div()
@@ -122,9 +131,7 @@ impl WorkspaceView {
                     .cursor_pointer()
                     .hover(|s| s.bg(gpui::rgba(0xffffff08)))
                     .on_click(move |_event, _window, _cx| {
-                        let _ = std::process::Command::new("open")
-                            .arg(&url_owned)
-                            .spawn();
+                        let _ = std::process::Command::new("open").arg(&url_owned).spawn();
                     })
                     // State badge pill
                     .child(
@@ -149,7 +156,8 @@ impl WorkspaceView {
                     // External link icon
                     .child(
                         div().flex_shrink_0().child(
-                            Icon::new(IconName::ExternalLink).svg()
+                            Icon::new(IconName::ExternalLink)
+                                .svg()
                                 .size(px(12.))
                                 .text_color(t.text_dim),
                         ),
@@ -181,7 +189,9 @@ impl WorkspaceView {
                 t.accent_red,
             ),
             CheckBucket::Pending => (
-                Icon::new(IconName::CircleDot).size(px(12.)).into_any_element(),
+                Icon::new(IconName::CircleDot)
+                    .size(px(12.))
+                    .into_any_element(),
                 t.accent_yellow,
             ),
             CheckBucket::Skipping | CheckBucket::Cancel => (
@@ -201,8 +211,7 @@ impl WorkspaceView {
             .px_2()
             .py(px(4.))
             .when(has_link, |el| {
-                el.cursor_pointer()
-                    .hover(|s| s.bg(gpui::rgba(0xffffff08)))
+                el.cursor_pointer().hover(|s| s.bg(gpui::rgba(0xffffff08)))
             })
             .on_click(move |_event, _window, _cx| {
                 if let Some(url) = &link {

@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -104,15 +104,16 @@ fn spawn_terminal_inner<T: 'static>(
             let _ = stdin_tx_for_input.send(bytes.to_vec());
         });
 
-        TerminalView::new_with_input(session, focus_handle, input)
-            .with_resize_callback(move |cols, rows| {
+        TerminalView::new_with_input(session, focus_handle, input).with_resize_callback(
+            move |cols, rows| {
                 let _ = master_for_resize.resize(PtySize {
                     rows,
                     cols,
                     pixel_width: 0,
                     pixel_height: 0,
                 });
-            })
+            },
+        )
     });
 
     // 16ms polling task: drain stdout channel → queue_output_bytes

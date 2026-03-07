@@ -1,5 +1,5 @@
-use ui::prelude::*;
 use crate::ui_state::UpdateStatus;
+use ui::prelude::*;
 
 use crate::WorkspaceView;
 
@@ -65,18 +65,14 @@ impl WorkspaceView {
         let left_collapsed = self.state.left_sidebar_collapsed;
         let right_collapsed = self.state.right_sidebar_collapsed;
 
-        let project_name = self
-            .state
-            .selected_repo
-            .as_ref()
-            .and_then(|repo| {
-                self.state
-                    .config
-                    .projects
-                    .iter()
-                    .find(|p| &p.repo_root == repo)
-                    .map(|p| p.display_name.clone())
-            });
+        let project_name = self.state.selected_repo.as_ref().and_then(|repo| {
+            self.state
+                .config
+                .projects
+                .iter()
+                .find(|p| &p.repo_root == repo)
+                .map(|p| p.display_name.clone())
+        });
         let branch_name = self
             .selected_project_runtime()
             .and_then(|rt| rt.branch_status.branch_name.clone());
@@ -90,29 +86,25 @@ impl WorkspaceView {
             .border_color(t.border_subtle)
             // Left side: traffic light padding + sidebar toggle
             .child(
-                h_flex()
-                    .pl(px(78.))
-                    .child(
-                        div()
-                            .id("toggle-left-sidebar")
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .cursor_pointer()
-                            .hover(|style| style.bg(t.hover_overlay))
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.on_toggle_left_sidebar(cx);
-                            }))
-                            .child(
-                                Icon::new(IconName::PanelLeft)
-                                    .size(px(14.))
-                                    .color(if left_collapsed {
-                                        t.text_dim
-                                    } else {
-                                        t.text_muted
-                                    }),
-                            ),
-                    ),
+                h_flex().pl(px(78.)).child(
+                    div()
+                        .id("toggle-left-sidebar")
+                        .px_2()
+                        .py_1()
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(t.hover_overlay))
+                        .on_click(cx.listener(|this, _, _window, cx| {
+                            this.on_toggle_left_sidebar(cx);
+                        }))
+                        .child(Icon::new(IconName::PanelLeft).size(px(14.)).color(
+                            if left_collapsed {
+                                t.text_dim
+                            } else {
+                                t.text_muted
+                            },
+                        )),
+                ),
             )
             // Center: project name / branch
             .child(
@@ -123,23 +115,11 @@ impl WorkspaceView {
                     .overflow_hidden()
                     .text_xs()
                     .when_some(project_name, |el, name| {
-                        el.child(
-                            div()
-                                .text_color(t.text_secondary)
-                                .child(name),
-                        )
+                        el.child(div().text_color(t.text_secondary).child(name))
                     })
                     .when_some(branch_name, |el, branch| {
-                        el.child(
-                            div()
-                                .text_color(t.text_dim)
-                                .child("/"),
-                        )
-                        .child(
-                            div()
-                                .text_color(t.text_muted)
-                                .child(branch),
-                        )
+                        el.child(div().text_color(t.text_dim).child("/"))
+                            .child(div().text_color(t.text_muted).child(branch))
                     }),
             )
             // Right side: update indicator + sidebar toggle
@@ -159,15 +139,13 @@ impl WorkspaceView {
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.on_toggle_right_sidebar(cx);
                             }))
-                            .child(
-                                Icon::new(IconName::PanelRight)
-                                    .size(px(14.))
-                                    .color(if right_collapsed {
-                                        t.text_dim
-                                    } else {
-                                        t.text_muted
-                                    }),
-                            ),
+                            .child(Icon::new(IconName::PanelRight).size(px(14.)).color(
+                                if right_collapsed {
+                                    t.text_dim
+                                } else {
+                                    t.text_muted
+                                },
+                            )),
                     ),
             )
             .into_any_element()

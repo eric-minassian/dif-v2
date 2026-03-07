@@ -1,7 +1,7 @@
 use gpui::{
     App, Bounds, Element, ElementId, ElementInputHandler, GlobalElementId, IntoElement, LayoutId,
-    PaintQuad, Pixels, SharedString, Style, TextRun, UnderlineStyle, Window, fill, hsla, point,
-    px, relative, rgba, size,
+    PaintQuad, Pixels, SharedString, Style, TextRun, UnderlineStyle, Window, fill, hsla, point, px,
+    relative, rgba, size,
 };
 
 use super::TerminalView;
@@ -241,10 +241,7 @@ impl Element for TerminalTextElement {
 
         let (marked_text, cursor_position) = {
             let view = self.view.read(cx);
-            (
-                view.marked_text.clone(),
-                view.session.cursor_position(),
-            )
+            (view.marked_text.clone(), view.session.cursor_position())
         };
 
         let (marked_text, marked_text_background) = marked_text
@@ -513,21 +510,17 @@ impl Element for TerminalTextElement {
             view.last_cell_metrics = paint_metrics;
         });
 
-        if bounds_changed {
-            if let Some((cell_width, cell_height)) = paint_metrics {
-                let cols = (f32::from(bounds.size.width) / cell_width)
-                    .floor()
-                    .max(1.0) as u16;
-                let rows = (f32::from(bounds.size.height) / cell_height)
-                    .floor()
-                    .max(1.0) as u16;
-                self.view.update(cx, |view, cx| {
-                    if let Some(cb) = view.resize_callback.as_ref() {
-                        cb(cols, rows);
-                    }
-                    view.resize_terminal(cols, rows, cx);
-                });
-            }
+        if bounds_changed && let Some((cell_width, cell_height)) = paint_metrics {
+            let cols = (f32::from(bounds.size.width) / cell_width).floor().max(1.0) as u16;
+            let rows = (f32::from(bounds.size.height) / cell_height)
+                .floor()
+                .max(1.0) as u16;
+            self.view.update(cx, |view, cx| {
+                if let Some(cb) = view.resize_callback.as_ref() {
+                    cb(cols, rows);
+                }
+                view.resize_terminal(cols, rows, cx);
+            });
         }
 
         let focus_handle = { self.view.read(cx).focus_handle.clone() };

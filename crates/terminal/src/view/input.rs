@@ -1,8 +1,7 @@
 use std::ops::Range;
 
 use gpui::{
-    Bounds, Context, EntityInputHandler, KeyDownEvent, Pixels, SharedString, UTF16Selection,
-    Window,
+    Bounds, Context, EntityInputHandler, KeyDownEvent, Pixels, SharedString, UTF16Selection, Window,
 };
 
 use super::helpers::{ctrl_byte_for_keystroke, encode_key_named, should_skip_key_down_for_ime};
@@ -43,10 +42,7 @@ impl TerminalView {
         s.chars().map(|ch| ch.len_utf16()).sum()
     }
 
-    pub(crate) fn utf16_range_to_utf8(
-        s: &str,
-        range_utf16: Range<usize>,
-    ) -> Option<Range<usize>> {
+    pub(crate) fn utf16_range_to_utf8(s: &str, range_utf16: Range<usize>) -> Option<Range<usize>> {
         let mut utf16_count = 0usize;
         let mut start_utf8: Option<usize> = None;
         let mut end_utf8: Option<usize> = None;
@@ -376,8 +372,7 @@ impl EntityInputHandler for TerminalView {
         let (cell_width, cell_height) = super::drawing::cell_metrics(window, &self.font)?;
 
         let base_x = element_bounds.left() + gpui::px(cell_width * (col.saturating_sub(1)) as f32);
-        let base_y =
-            element_bounds.top() + gpui::px(cell_height * (row.saturating_sub(1)) as f32);
+        let base_y = element_bounds.top() + gpui::px(cell_height * (row.saturating_sub(1)) as f32);
 
         let offset_cells = self
             .marked_text

@@ -1,8 +1,8 @@
 use gpui::{MouseButton, MouseMoveEvent, MouseUpEvent};
 
-use ui::prelude::*;
 use crate::config::{MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH};
 use crate::ui_state::ResizingSidebar;
+use ui::prelude::*;
 
 use crate::WorkspaceView;
 
@@ -42,8 +42,7 @@ impl WorkspaceView {
             }
             ResizingSidebar::Right => {
                 let window_width = f32::from(window.viewport_size().width);
-                let w =
-                    (window_width - x).clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+                let w = (window_width - x).clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
                 self.state.right_sidebar_width = w;
             }
         }

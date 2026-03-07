@@ -1,6 +1,6 @@
-use ui::prelude::*;
 use crate::ui_state::UpdateStatus;
 use crate::updater;
+use ui::prelude::*;
 
 use crate::WorkspaceView;
 

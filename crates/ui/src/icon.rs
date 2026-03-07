@@ -1,4 +1,4 @@
-use gpui::{svg, App, ClickEvent, ElementId, Pixels, Svg};
+use gpui::{App, ClickEvent, ElementId, Pixels, Svg, svg};
 
 use crate::prelude::*;
 
@@ -83,6 +83,8 @@ impl RenderOnce for Icon {
 
 // -- IconButton (RenderOnce) -------------------------------------------------
 
+type IconClickHandler = dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static;
+
 #[derive(IntoElement)]
 pub struct IconButton {
     id: ElementId,
@@ -90,7 +92,7 @@ pub struct IconButton {
     icon_size: Pixels,
     icon_color: Color,
     hover_color: Option<Color>,
-    on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
+    on_click: Option<Box<IconClickHandler>>,
     visible_on_hover: Option<SharedString>,
 }
 
@@ -138,11 +140,7 @@ impl RenderOnce for IconButton {
             .size(self.icon_size)
             .color(self.icon_color);
 
-        let mut el = div()
-            .id(self.id)
-            .cursor_pointer()
-            .px_1()
-            .flex_shrink_0();
+        let mut el = div().id(self.id).cursor_pointer().px_1().flex_shrink_0();
 
         if let Some(group) = &self.visible_on_hover {
             el = el.invisible().group_hover(group.clone(), |s| s.visible());
@@ -188,6 +186,12 @@ impl DiffStat {
     }
 }
 
+impl Default for DiffStat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RenderOnce for DiffStat {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         h_flex()
@@ -201,15 +205,12 @@ impl RenderOnce for DiffStat {
                         .child(format!("+{adds}")),
                 )
             })
-            .when_some(
-                self.deletions.filter(|&d| d > 0),
-                |el, dels| {
-                    el.child(
-                        div()
-                            .text_color(Color::Red.hsla())
-                            .child(format!("-{dels}")),
-                    )
-                },
-            )
+            .when_some(self.deletions.filter(|&d| d > 0), |el, dels| {
+                el.child(
+                    div()
+                        .text_color(Color::Red.hsla())
+                        .child(format!("-{dels}")),
+                )
+            })
     }
 }

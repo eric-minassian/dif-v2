@@ -295,28 +295,43 @@ fn sgr_mouse_encoding_helpers_match_expected_format() {
 #[test]
 fn ctrl_c_encodes_to_etx_even_without_key_char() {
     let ctrl_c = Keystroke::parse("ctrl-c").unwrap();
-    assert_eq!(super::view::helpers::ctrl_byte_for_keystroke(&ctrl_c), Some(0x03));
+    assert_eq!(
+        super::view::helpers::ctrl_byte_for_keystroke(&ctrl_c),
+        Some(0x03)
+    );
 }
 
 #[test]
 fn does_not_skip_enter_key_when_ime_in_progress() {
     let enter = Keystroke::parse("enter").unwrap();
     assert!(enter.is_ime_in_progress());
-    assert!(!super::view::helpers::should_skip_key_down_for_ime(true, &enter));
+    assert!(!super::view::helpers::should_skip_key_down_for_ime(
+        true, &enter
+    ));
 
     let letter = Keystroke::parse("a").unwrap();
     assert!(letter.is_ime_in_progress());
-    assert!(super::view::helpers::should_skip_key_down_for_ime(true, &letter));
+    assert!(super::view::helpers::should_skip_key_down_for_ime(
+        true, &letter
+    ));
 
     let committed = Keystroke::parse("a->a").unwrap();
     assert!(!committed.is_ime_in_progress());
-    assert!(!super::view::helpers::should_skip_key_down_for_ime(true, &committed));
+    assert!(!super::view::helpers::should_skip_key_down_for_ime(
+        true, &committed
+    ));
 }
 
 #[test]
 fn byte_index_for_column_in_line_handles_wide_characters() {
-    assert_eq!(super::view::helpers::byte_index_for_column_in_line("Ｗa", 1), 0);
-    assert_eq!(super::view::helpers::byte_index_for_column_in_line("Ｗa", 2), 0);
+    assert_eq!(
+        super::view::helpers::byte_index_for_column_in_line("Ｗa", 1),
+        0
+    );
+    assert_eq!(
+        super::view::helpers::byte_index_for_column_in_line("Ｗa", 2),
+        0
+    );
     assert_eq!(
         super::view::helpers::byte_index_for_column_in_line("Ｗa", 3),
         "Ｗ".len()

@@ -69,19 +69,6 @@ impl WorkspaceView {
         let project_row_id =
             gpui::ElementId::Name(format!("proj-{}", project.display_name).into());
 
-        let path_label = if project.last_known_valid {
-            let components: Vec<_> = project.repo_root.components().collect();
-            if components.len() > 2 {
-                let tail: std::path::PathBuf =
-                    components[components.len() - 2..].iter().collect();
-                format!(".../{}", tail.display())
-            } else {
-                project.repo_root.display().to_string()
-            }
-        } else {
-            format!("Missing: {}", project.repo_root.display())
-        };
-
         let mut container = div().flex().flex_col().border_b_1().border_color(t.border_subtle);
 
         // Project header row
@@ -149,13 +136,6 @@ impl WorkspaceView {
                                     t.text_muted
                                 })
                                 .child(project.display_name.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(t.text_dim)
-                                .overflow_hidden()
-                                .child(path_label),
                         ),
                 )
                 .child(

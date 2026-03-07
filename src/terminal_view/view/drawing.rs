@@ -1,4 +1,4 @@
-use ghostty_vt::Rgb;
+use super::super::Rgb;
 use gpui::{Bounds, PaintQuad, Pixels, SharedString, TextRun, UnderlineStyle, fill, point, px};
 
 pub(crate) const CELL_STYLE_FLAG_BOLD: u8 = 0x02;

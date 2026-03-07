@@ -133,3 +133,81 @@ pub(crate) fn byte_index_for_column_in_line(line: &str, col: u16) -> usize {
 
     line.len()
 }
+
+/// Encode a named key (arrow, home, end, etc.) with modifiers into escape bytes.
+pub(crate) fn encode_key_named(
+    name: &str,
+    shift: bool,
+    control: bool,
+    alt: bool,
+) -> Option<Vec<u8>> {
+    // Modifier parameter for CSI sequences: 1 + (shift*1 + alt*2 + ctrl*4)
+    let modifier_param = 1
+        + if shift { 1 } else { 0 }
+        + if alt { 2 } else { 0 }
+        + if control { 4 } else { 0 };
+    let has_modifiers = modifier_param > 1;
+
+    // Helper: CSI sequence with optional modifier
+    // Format: ESC [ 1 ; <mod> <final> or ESC [ <final>
+    let csi_key = |final_byte: u8| -> Vec<u8> {
+        if has_modifiers {
+            format!("\x1b[1;{}{}", modifier_param, final_byte as char).into_bytes()
+        } else {
+            vec![0x1b, b'[', final_byte]
+        }
+    };
+
+    // Helper: CSI ~ sequence with number
+    // Format: ESC [ <num> ; <mod> ~ or ESC [ <num> ~
+    let csi_tilde = |num: u8| -> Vec<u8> {
+        if has_modifiers {
+            format!("\x1b[{};{}~", num, modifier_param).into_bytes()
+        } else {
+            format!("\x1b[{}~", num).into_bytes()
+        }
+    };
+
+    // Helper: SS3 sequence (for F1-F4 without modifiers)
+    // Format: ESC O <final> or CSI 1 ; <mod> <final>
+    let ss3_or_csi = |final_byte: u8| -> Vec<u8> {
+        if has_modifiers {
+            format!("\x1b[1;{}{}", modifier_param, final_byte as char).into_bytes()
+        } else {
+            vec![0x1b, b'O', final_byte]
+        }
+    };
+
+    let result = match name {
+        "up" => csi_key(b'A'),
+        "down" => csi_key(b'B'),
+        "right" => csi_key(b'C'),
+        "left" => csi_key(b'D'),
+        "home" => csi_key(b'H'),
+        "end" => csi_key(b'F'),
+        "insert" => csi_tilde(2),
+        "delete" => csi_tilde(3),
+        "pageup" | "page_up" => csi_tilde(5),
+        "pagedown" | "page_down" => csi_tilde(6),
+        "f1" => ss3_or_csi(b'P'),
+        "f2" => ss3_or_csi(b'Q'),
+        "f3" => ss3_or_csi(b'R'),
+        "f4" => ss3_or_csi(b'S'),
+        "f5" => csi_tilde(15),
+        "f6" => csi_tilde(17),
+        "f7" => csi_tilde(18),
+        "f8" => csi_tilde(19),
+        "f9" => csi_tilde(20),
+        "f10" => csi_tilde(21),
+        "f11" => csi_tilde(23),
+        "f12" => csi_tilde(24),
+        "tab" if !has_modifiers => b"\t".to_vec(),
+        "tab" if shift && !control && !alt => b"\x1b[Z".to_vec(),
+        "enter" | "return" if !has_modifiers => b"\r".to_vec(),
+        "backspace" if !has_modifiers => vec![0x7f],
+        "escape" if !has_modifiers => vec![0x1b],
+        _ => return None,
+    };
+
+    Some(result)
+}

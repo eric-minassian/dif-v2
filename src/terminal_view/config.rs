@@ -1,4 +1,18 @@
-use ghostty_vt::Rgb;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rgb {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StyleRun {
+    pub start_col: u16,
+    pub end_col: u16,
+    pub fg: Rgb,
+    pub bg: Rgb,
+    pub flags: u8,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct TerminalConfig {

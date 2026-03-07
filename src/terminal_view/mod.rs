@@ -1,3 +1,4 @@
+pub(crate) mod colors;
 mod config;
 mod font;
 mod session;

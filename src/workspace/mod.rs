@@ -247,11 +247,23 @@ impl WorkspaceView {
         self.state.runtimes.get(repo)
     }
 
+    fn selected_project_runtime_mut(&mut self) -> Option<&mut ProjectRuntime> {
+        let repo = self.state.selected_repo.as_ref()?;
+        self.state.runtimes.get_mut(repo)
+    }
+
     fn selected_session_runtime(&self) -> Option<&SessionRuntime> {
         let repo = self.state.selected_repo.as_ref()?;
         let session_id = self.state.selected_session.as_ref()?;
         let project_runtime = self.state.runtimes.get(repo)?;
         project_runtime.session_runtimes.get(session_id)
+    }
+
+    fn selected_session_runtime_mut(&mut self) -> Option<&mut SessionRuntime> {
+        let repo = self.state.selected_repo.as_ref()?;
+        let session_id = self.state.selected_session.as_ref()?;
+        let project_runtime = self.state.runtimes.get_mut(repo)?;
+        project_runtime.session_runtimes.get_mut(session_id)
     }
 
     fn flash_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {

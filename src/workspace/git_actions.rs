@@ -11,10 +11,7 @@ impl WorkspaceView {
     /// Cmd+Enter: trigger the current git action based on state.
     /// Mirrors the logic in `render_header_action_button` to pick the right action.
     pub(crate) fn on_run_git_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(repo) = self.state.selected_repo.as_ref() else {
-            return;
-        };
-        let Some(runtime) = self.state.runtimes.get(repo) else {
+        let Some(runtime) = self.selected_project_runtime() else {
             return;
         };
         if matches!(runtime.action_phase, ActionPhase::Working(_)) {
@@ -59,10 +56,7 @@ impl WorkspaceView {
     }
 
     pub(crate) fn on_toggle_staged(&mut self, path: String, cx: &mut Context<Self>) {
-        let Some(repo) = self.state.selected_repo.as_ref() else {
-            return;
-        };
-        let Some(runtime) = self.state.runtimes.get_mut(repo) else {
+        let Some(runtime) = self.selected_project_runtime_mut() else {
             return;
         };
         if runtime.staged_files.contains(&path) {
@@ -74,10 +68,8 @@ impl WorkspaceView {
     }
 
     pub(crate) fn on_dismiss_action_error(&mut self, cx: &mut Context<Self>) {
-        if let Some(repo) = self.state.selected_repo.as_ref() {
-            if let Some(runtime) = self.state.runtimes.get_mut(repo) {
-                runtime.action_phase = ActionPhase::Idle;
-            }
+        if let Some(runtime) = self.selected_project_runtime_mut() {
+            runtime.action_phase = ActionPhase::Idle;
         }
         cx.notify();
     }
@@ -86,56 +78,28 @@ impl WorkspaceView {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };
-        let Some(session_id) = self.state.selected_session.clone() else {
+        let message = self.session_name(&repo);
+        let Some(runtime) = self.state.runtimes.get(&repo) else {
             return;
         };
-
-        // Resolve the commit message from the session name
-        let message = self
-            .state
-            .config
-            .projects
-            .iter()
-            .find(|p| p.repo_root == repo)
-            .and_then(|p| p.sessions.iter().find(|s| s.id == session_id))
-            .map(|s| s.name.clone())
-            .unwrap_or_default();
-
-        let files = {
-            let Some(runtime) = self.state.runtimes.get(&repo) else {
-                return;
-            };
-            if matches!(runtime.action_phase, ActionPhase::Working(_)) {
-                return;
-            }
-            let files: Vec<String> = runtime.staged_files.iter().cloned().collect();
-            if files.is_empty() {
-                return;
-            }
-            if message.trim().is_empty() {
-                return;
-            }
-            files
-        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+        let files: Vec<String> = runtime.staged_files.iter().cloned().collect();
+        if files.is_empty() || message.trim().is_empty() {
+            return;
+        }
 
         // Validate conventional commit format if enforced
-        if let Some(project) = self
-            .state
-            .config
-            .projects
-            .iter()
-            .find(|p| p.repo_root == repo)
-        {
-            if project.settings.enforce_conventional_commits && !is_conventional_commit(&message) {
-                if let Some(runtime) = self.state.runtimes.get_mut(&repo) {
-                    runtime.action_phase = ActionPhase::Error(
-                        "Commit message must follow Conventional Commits: type[(scope)]: description"
-                            .into(),
-                    );
-                }
-                cx.notify();
-                return;
+        if self.enforces_conventional_commits(&repo) && !is_conventional_commit(&message) {
+            if let Some(runtime) = self.state.runtimes.get_mut(&repo) {
+                runtime.action_phase = ActionPhase::Error(
+                    "Commit message must follow Conventional Commits: type[(scope)]: description"
+                        .into(),
+                );
             }
+            cx.notify();
+            return;
         }
 
         let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
@@ -145,18 +109,14 @@ impl WorkspaceView {
         cx.notify();
 
         let working_dir = self.working_dir(&repo);
-
         let view = cx.entity().clone();
-        let repo_clone = repo.clone();
 
         window
             .spawn(cx, async move |cx| {
-                let dir = working_dir.clone();
-
                 let result = cx
                     .background_executor()
                     .spawn({
-                        let dir = dir.clone();
+                        let dir = working_dir.clone();
                         let files = files.clone();
                         async move { git::commit_selected(&dir, &files, &message) }
                     })
@@ -165,7 +125,7 @@ impl WorkspaceView {
                 if let Err(e) = result {
                     cx.update(|_, cx| {
                         view.update(cx, |this, cx| {
-                            if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                            if let Some(rt) = this.state.runtimes.get_mut(&repo) {
                                 rt.action_phase = ActionPhase::Error(format!("Commit: {e}"));
                             }
                             cx.notify();
@@ -175,18 +135,17 @@ impl WorkspaceView {
                     return;
                 }
 
-                // Push
                 let push_result = cx
                     .background_executor()
                     .spawn({
-                        let dir = dir.clone();
+                        let dir = working_dir.clone();
                         async move { git::push(&dir) }
                     })
                     .await;
 
                 cx.update(|_, cx| {
                     view.update(cx, |this, cx| {
-                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo) {
                             match push_result {
                                 Ok(()) => {
                                     rt.staged_files.clear();
@@ -223,18 +182,14 @@ impl WorkspaceView {
         cx.notify();
 
         let working_dir = self.working_dir(&repo);
-
         let view = cx.entity().clone();
-        let repo_clone = repo.clone();
 
         window
             .spawn(cx, async move |cx| {
-                let dir = working_dir.clone();
-
                 let result = cx
                     .background_executor()
                     .spawn({
-                        let dir = dir.clone();
+                        let dir = working_dir.clone();
                         let files = files.clone();
                         async move { git::amend_selected(&dir, &files) }
                     })
@@ -243,7 +198,7 @@ impl WorkspaceView {
                 if let Err(e) = result {
                     cx.update(|_, cx| {
                         view.update(cx, |this, cx| {
-                            if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                            if let Some(rt) = this.state.runtimes.get_mut(&repo) {
                                 rt.action_phase = ActionPhase::Error(format!("Amend: {e}"));
                             }
                             cx.notify();
@@ -253,18 +208,17 @@ impl WorkspaceView {
                     return;
                 }
 
-                // Force push
                 let push_result = cx
                     .background_executor()
                     .spawn({
-                        let dir = dir.clone();
+                        let dir = working_dir.clone();
                         async move { git::force_push(&dir) }
                     })
                     .await;
 
                 cx.update(|_, cx| {
                     view.update(cx, |this, cx| {
-                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo) {
                             match push_result {
                                 Ok(()) => {
                                     rt.staged_files.clear();
@@ -287,9 +241,6 @@ impl WorkspaceView {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };
-        let Some(session_id) = self.state.selected_session.clone() else {
-            return;
-        };
         let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
             return;
         };
@@ -299,42 +250,30 @@ impl WorkspaceView {
         runtime.action_phase = ActionPhase::Working("Creating PR...".into());
         cx.notify();
 
-        // Use session name as PR title
-        let pr_title = self
-            .state
-            .config
-            .projects
-            .iter()
-            .find(|p| p.repo_root == repo)
-            .and_then(|p| p.sessions.iter().find(|s| s.id == session_id))
-            .map(|s| s.name.clone())
-            .unwrap_or_else(|| "changes".to_string());
-
+        let pr_title = {
+            let name = self.session_name(&repo);
+            if name.is_empty() { "changes".to_string() } else { name }
+        };
         let working_dir = self.working_dir(&repo);
-
         let view = cx.entity().clone();
-        let repo_clone = repo.clone();
 
         window
             .spawn(cx, async move |cx| {
-                let dir = working_dir.clone();
-
                 let pr_result = cx
                     .background_executor()
                     .spawn({
-                        let dir = dir.clone();
+                        let dir = working_dir.clone();
                         async move { git::create_pr(&dir, &pr_title) }
                     })
                     .await;
 
                 cx.update(|window, cx| {
                     view.update(cx, |this, cx| {
-                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo) {
                             match pr_result {
                                 Ok(_) => {
                                     rt.action_phase = ActionPhase::Idle;
-                                    // Restart poll so checks are fetched immediately
-                                    this.start_git_poll(repo_clone.clone(), window, cx);
+                                    this.start_git_poll(repo.clone(), window, cx);
                                 }
                                 Err(e) => {
                                     rt.action_phase = ActionPhase::Error(format!("PR: {e}"));
@@ -359,34 +298,27 @@ impl WorkspaceView {
         if matches!(runtime.action_phase, ActionPhase::Working(_)) {
             return;
         }
-
         runtime.action_phase = ActionPhase::Working("Merging...".into());
         cx.notify();
 
         let working_dir = self.working_dir(&repo);
-
         let view = cx.entity().clone();
-        let repo_clone = repo.clone();
 
         window
             .spawn(cx, async move |cx| {
-                let dir = working_dir.clone();
-
                 let merge_result = cx
                     .background_executor()
                     .spawn({
-                        let dir = dir.clone();
+                        let dir = working_dir.clone();
                         async move { git::merge_pr_rebase(&dir) }
                     })
                     .await;
 
                 cx.update(|_, cx| {
                     view.update(cx, |this, cx| {
-                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo) {
                             match merge_result {
-                                Ok(()) => {
-                                    rt.action_phase = ActionPhase::Idle;
-                                }
+                                Ok(()) => rt.action_phase = ActionPhase::Idle,
                                 Err(e) => {
                                     rt.action_phase = ActionPhase::Error(format!("Merge: {e}"));
                                 }
@@ -425,18 +357,14 @@ impl WorkspaceView {
         cx.notify();
 
         let working_dir = self.working_dir(&repo);
-
         let view = cx.entity().clone();
-        let repo_clone = repo.clone();
 
         window
             .spawn(cx, async move |cx| {
-                let dir = working_dir.clone();
-
                 let result = cx
                     .background_executor()
                     .spawn({
-                        let dir = dir.clone();
+                        let dir = working_dir.clone();
                         async move {
                             if currently_enabled {
                                 git::disable_auto_merge(&dir)
@@ -449,13 +377,12 @@ impl WorkspaceView {
 
                 cx.update(|window, cx| {
                     view.update(cx, |this, cx| {
-                        if let Some(rt) = this.state.runtimes.get_mut(&repo_clone) {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo) {
                             match result {
                                 Ok(()) => {
                                     rt.branch_status.auto_merge_enabled = !currently_enabled;
                                     rt.action_phase = ActionPhase::Idle;
-                                    // Restart poll to pick up fresh state
-                                    this.start_git_poll(repo_clone.clone(), window, cx);
+                                    this.start_git_poll(repo.clone(), window, cx);
                                 }
                                 Err(e) => {
                                     rt.action_phase =

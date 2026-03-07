@@ -46,6 +46,7 @@ impl Default for SessionRuntime {
     }
 }
 
+#[derive(Default)]
 pub struct ProjectRuntime {
     pub session_runtimes: HashMap<String, SessionRuntime>,
     pub git_snapshot: GitSnapshot,
@@ -53,19 +54,6 @@ pub struct ProjectRuntime {
     pub branch_status: BranchStatus,
     pub repo_capabilities: RepoCapabilities,
     pub action_phase: ActionPhase,
-}
-
-impl Default for ProjectRuntime {
-    fn default() -> Self {
-        Self {
-            session_runtimes: HashMap::new(),
-            git_snapshot: GitSnapshot::default(),
-            staged_files: HashSet::new(),
-            branch_status: BranchStatus::default(),
-            repo_capabilities: RepoCapabilities::default(),
-            action_phase: ActionPhase::default(),
-        }
-    }
 }
 
 #[derive(Default)]

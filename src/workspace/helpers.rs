@@ -11,6 +11,31 @@ use crate::theme::theme;
 
 use super::WorkspaceView;
 
+impl WorkspaceView {
+    /// Get the session name (used as commit message) for the currently selected session.
+    pub(crate) fn session_name(&self, repo: &Path) -> String {
+        let session_id = self.state.selected_session.as_deref().unwrap_or_default();
+        self.state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root.as_path() == repo)
+            .and_then(|p| p.sessions.iter().find(|s| s.id == session_id))
+            .map(|s| s.name.clone())
+            .unwrap_or_default()
+    }
+
+    /// Check whether the project at `repo` enforces conventional commit format.
+    pub(crate) fn enforces_conventional_commits(&self, repo: &Path) -> bool {
+        self.state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root.as_path() == repo)
+            .is_some_and(|p| p.settings.enforce_conventional_commits)
+    }
+}
+
 pub(crate) fn resize_handle(
     id: &'static str,
     cx: &mut Context<WorkspaceView>,

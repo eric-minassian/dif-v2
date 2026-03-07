@@ -1,8 +1,7 @@
-use gpui::{div, prelude::*, px, AnyElement, Context, Hsla, MouseButton};
+use gpui::Hsla;
 
-use crate::icons::{icon_external_link, icon_x};
+use crate::prelude::*;
 use crate::state::{ActionPhase, BranchStatus, CheckBucket, RepoCapabilities};
-use crate::theme::theme;
 
 use super::WorkspaceView;
 
@@ -76,12 +75,9 @@ impl WorkspaceView {
                     .when(!is_busy, |el| {
                         el.cursor_pointer()
                             .hover(|style| style.bg(t.bg_elevated_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    this.on_toggle_pr_auto_merge(window, cx);
-                                }),
-                            )
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.on_toggle_pr_auto_merge(window, cx);
+                            }))
                     })
                     .child("Auto Merge")
                     .into_any_element();
@@ -103,12 +99,9 @@ impl WorkspaceView {
                     .when(!is_busy, |el| {
                         el.cursor_pointer()
                             .hover(|style| style.bg(t.bg_elevated_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, window, cx| {
-                                    this.on_toggle_pr_auto_merge(window, cx);
-                                }),
-                            )
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.on_toggle_pr_auto_merge(window, cx);
+                            }))
                     })
                     .child("Auto Merge")
                     .into_any_element();
@@ -145,17 +138,14 @@ impl WorkspaceView {
             .when(!is_busy, |el| {
                 el.cursor_pointer()
                     .hover(|style| style.bg(t.bg_elevated_hover))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |this, event, window, cx| match action_clone {
-                            PanelAction::Commit => this.on_commit(window, cx),
-                            PanelAction::Amend => this.on_amend(window, cx),
-                            PanelAction::CreatePR => this.on_create_pr(window, cx),
-                            PanelAction::Rebase => this.on_rebase(window, cx),
-                            PanelAction::CloseSession => this.on_close_session(event, window, cx),
-                            PanelAction::None => {}
-                        }),
-                    )
+                    .on_click(cx.listener(move |this, _event, window, cx| match action_clone {
+                        PanelAction::Commit => this.on_commit(window, cx),
+                        PanelAction::Amend => this.on_amend(window, cx),
+                        PanelAction::CreatePR => this.on_create_pr(window, cx),
+                        PanelAction::Rebase => this.on_rebase(window, cx),
+                        PanelAction::CloseSession => this.on_close_session(window, cx),
+                        PanelAction::None => {}
+                    }))
             })
             .child(label)
             .into_any_element()
@@ -183,7 +173,7 @@ impl WorkspaceView {
                 .opacity(0.7)
                 .child(label.clone())
                 .into_any_element(),
-            ActionPhase::Error(msg) => div()
+            ActionPhase::Error(msg) => h_flex()
                 .id("action-error")
                 .w_full()
                 .px_2()
@@ -191,8 +181,6 @@ impl WorkspaceView {
                 .rounded_md()
                 .text_xs()
                 .bg(t.error_bg)
-                .flex()
-                .items_center()
                 .justify_between()
                 .child(
                     div()
@@ -207,13 +195,10 @@ impl WorkspaceView {
                         .text_color(t.text_dim)
                         .cursor_pointer()
                         .hover(|s| s.text_color(t.text_primary))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _event, _window, cx| {
-                                this.on_dismiss_action_error(cx);
-                            }),
-                        )
-                        .child(icon_x().size_3p5().text_color(t.text_dim)),
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.on_dismiss_action_error(cx);
+                        }))
+                        .child(Icon::new(IconName::X).size(px(14.)).color(Color::Dim)),
                 )
                 .into_any_element(),
             ActionPhase::Idle => {
@@ -238,14 +223,12 @@ impl WorkspaceView {
             None => "PR".to_string(),
         };
 
-        div()
+        h_flex()
             .id("header-pr-link")
-            .flex()
-            .items_center()
             .gap(px(2.))
             .cursor_pointer()
             .hover(|s| s.opacity(0.7))
-            .on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+            .on_click(move |_event, _window, _cx| {
                 let _ = std::process::Command::new("open").arg(&url).spawn();
             })
             .child(
@@ -255,9 +238,9 @@ impl WorkspaceView {
                     .child(pr_label),
             )
             .child(
-                icon_external_link()
+                Icon::new(IconName::ExternalLink)
                     .size(px(12.))
-                    .text_color(t.text_dim),
+                    .color(Color::Dim),
             )
             .into_any_element()
     }

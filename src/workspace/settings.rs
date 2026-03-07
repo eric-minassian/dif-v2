@@ -1,11 +1,8 @@
 use std::path::PathBuf;
 
-use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
-
-use crate::icons::{icon_plus, icon_x};
+use crate::prelude::*;
 use crate::state::UpdateStatus;
 use crate::text_input::{TextInput, TextInputEvent};
-use crate::theme::theme;
 use crate::updater;
 
 use super::{SettingsEdit, WorkspaceView};
@@ -113,9 +110,7 @@ impl WorkspaceView {
     pub(crate) fn render_settings_view(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
 
-        let header = div()
-            .flex()
-            .items_center()
+        let header = h_flex()
             .justify_between()
             .px_3()
             .py_2()
@@ -139,33 +134,26 @@ impl WorkspaceView {
                     .bg(t.bg_elevated)
                     .text_color(t.text_muted)
                     .hover(|style| style.bg(t.bg_elevated_hover).text_color(t.text_primary))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _event, _window, cx| {
-                            this.on_close_settings(cx);
-                        }),
-                    )
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.on_close_settings(cx);
+                    }))
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(icon_x().size_3().text_color(t.text_muted))
+                    .child(Icon::new(IconName::X).size(px(12.)).color(Color::Muted))
                     .child("Esc"),
             );
 
-        let mut content = div()
+        let mut content = v_flex()
             .id("settings-content")
             .flex_1()
             .min_h_0()
             .overflow_scroll()
             .p_4()
-            .flex()
-            .flex_col()
             .gap_4();
 
         // About / Version section
-        let mut about_section = div()
-            .flex()
-            .flex_col()
+        let mut about_section = v_flex()
             .gap_2()
             .child(
                 div()
@@ -186,9 +174,7 @@ impl WorkspaceView {
                 let url = download_url.clone();
                 let ver = version.clone();
                 about_section = about_section.child(
-                    div()
-                        .flex()
-                        .items_center()
+                    h_flex()
                         .gap_2()
                         .child(
                             div()
@@ -207,12 +193,9 @@ impl WorkspaceView {
                                 .bg(t.bg_elevated)
                                 .text_color(t.accent_green)
                                 .hover(|style| style.bg(t.bg_elevated_hover))
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, _, window, cx| {
-                                        this.on_start_update(url.clone(), window, cx);
-                                    }),
-                                )
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.on_start_update(url.clone(), window, cx);
+                                }))
                                 .child("Install update"),
                         ),
                 );
@@ -244,12 +227,9 @@ impl WorkspaceView {
                             .bg(t.bg_elevated)
                             .text_color(t.text_secondary)
                             .hover(|style| style.bg(t.bg_elevated_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _, window, cx| {
-                                    this.spawn_update_check(window, cx);
-                                }),
-                            )
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.spawn_update_check(window, cx);
+                            }))
                             .child("Retry"),
                     );
             }
@@ -273,12 +253,9 @@ impl WorkspaceView {
                         .bg(t.bg_elevated)
                         .text_color(t.text_secondary)
                         .hover(|style| style.bg(t.bg_elevated_hover))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _, window, cx| {
-                                this.spawn_update_check(window, cx);
-                            }),
-                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.spawn_update_check(window, cx);
+                        }))
                         .child("Check for updates"),
                 );
             }
@@ -290,9 +267,7 @@ impl WorkspaceView {
         for project in &self.state.config.projects {
             let repo_root = project.repo_root.clone();
 
-            let mut project_section = div()
-                .flex()
-                .flex_col()
+            let mut project_section = v_flex()
                 .gap_2()
                 .p_3()
                 .rounded_md()
@@ -319,15 +294,11 @@ impl WorkspaceView {
                     format!("cc-toggle-{}", project.display_name).into(),
                 );
                 project_section = project_section.child(
-                    div()
+                    h_flex()
                         .mt_2()
-                        .flex()
-                        .items_center()
                         .justify_between()
                         .child(
-                            div()
-                                .flex()
-                                .flex_col()
+                            v_flex()
                                 .gap_0p5()
                                 .child(
                                     div()
@@ -354,12 +325,9 @@ impl WorkspaceView {
                                 .bg(if is_enabled { t.accent_blue } else { t.bg_surface })
                                 .text_color(if is_enabled { t.bg_panel } else { t.text_muted })
                                 .hover(|style| style.bg(t.bg_elevated_hover))
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, _event, _window, cx| {
-                                        this.on_toggle_conventional_commits(toggle_repo.clone(), cx);
-                                    }),
-                                )
+                                .on_click(cx.listener(move |this, _event, _window, cx| {
+                                    this.on_toggle_conventional_commits(toggle_repo.clone(), cx);
+                                }))
                                 .child(if is_enabled { "On" } else { "Off" }),
                         ),
                 );
@@ -397,11 +365,9 @@ impl WorkspaceView {
                         gpui::ElementId::Name(format!("cmd-{}-{}", project.display_name, i).into());
 
                     project_section = project_section.child(
-                        div()
+                        h_flex()
                             .id(cmd_row_id)
                             .group("cmd-row")
-                            .flex()
-                            .items_center()
                             .justify_between()
                             .px_2()
                             .py_1()
@@ -426,17 +392,14 @@ impl WorkspaceView {
                                     .invisible()
                                     .group_hover("cmd-row", |style| style.visible())
                                     .hover(|style| style.text_color(t.accent_red))
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |this, _event, _window, cx| {
-                                            this.on_remove_init_command(
-                                                remove_repo.clone(),
-                                                cmd_index,
-                                                cx,
-                                            );
-                                        }),
-                                    )
-                                    .child(icon_x().size_3p5().text_color(t.text_dim)),
+                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                        this.on_remove_init_command(
+                                            remove_repo.clone(),
+                                            cmd_index,
+                                            cx,
+                                        );
+                                    }))
+                                    .child(Icon::new(IconName::X).size(px(14.)).color(Color::Dim)),
                             ),
                     );
                 }
@@ -451,10 +414,8 @@ impl WorkspaceView {
             if is_editing {
                 let input = self.settings_input.as_ref().unwrap().input.clone();
                 project_section = project_section.child(
-                    div()
+                    h_flex()
                         .mt_1()
-                        .flex()
-                        .items_center()
                         .gap_2()
                         .child(div().flex_1().min_w_0().child(input)),
                 );
@@ -471,16 +432,13 @@ impl WorkspaceView {
                         .text_xs()
                         .text_color(t.text_dim)
                         .hover(|style| style.text_color(t.text_primary))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |this, _event, window, cx| {
-                                this.on_start_add_init_command(add_repo.clone(), window, cx);
-                            }),
-                        )
+                        .on_click(cx.listener(move |this, _event, window, cx| {
+                            this.on_start_add_init_command(add_repo.clone(), window, cx);
+                        }))
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(icon_plus().size_3().text_color(t.text_dim))
+                        .child(Icon::new(IconName::Plus).size(px(12.)).color(Color::Dim))
                         .child("Add command"),
                 );
             }
@@ -488,12 +446,10 @@ impl WorkspaceView {
             content = content.child(project_section);
         }
 
-        div()
+        v_flex()
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .flex()
-            .flex_col()
             .child(header)
             .child(content)
             .into_any_element()

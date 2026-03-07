@@ -1,5 +1,6 @@
-use gpui::{Context, MouseButton, MouseMoveEvent, MouseUpEvent, Window};
+use gpui::{MouseButton, MouseMoveEvent, MouseUpEvent};
 
+use crate::prelude::*;
 use crate::state::{
     ResizingSidebar, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH,
 };

@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
-use gpui::{AppContext, Context, Focusable, MouseUpEvent, Window};
+use gpui::{AppContext, Focusable};
 
 use crate::git;
 use crate::git::conventional::is_conventional_commit;
+use crate::prelude::*;
 use crate::state::SavedSession;
 use crate::text_input::{TextInput, TextInputEvent};
 
@@ -15,7 +16,6 @@ impl WorkspaceView {
     pub(crate) fn on_add_session(
         &mut self,
         repo_root: PathBuf,
-        _event: &MouseUpEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -178,7 +178,6 @@ impl WorkspaceView {
         &mut self,
         repo_root: PathBuf,
         session_id: String,
-        _event: &MouseUpEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -328,7 +327,6 @@ impl WorkspaceView {
 
     pub(crate) fn on_close_session(
         &mut self,
-        _event: &MouseUpEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -338,8 +336,7 @@ impl WorkspaceView {
         let Some(session_id) = self.state.selected_session.clone() else {
             return;
         };
-        // Reuse on_delete_session logic with a synthetic event
-        self.on_delete_session(repo, session_id, _event, window, cx);
+        self.on_delete_session(repo, session_id, window, cx);
     }
 
     pub(crate) fn select_session_by_index(

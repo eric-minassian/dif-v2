@@ -1,11 +1,8 @@
-use gpui::{AnyElement, ClickEvent, Context, MouseButton, div, prelude::*, px};
+use gpui::ClickEvent;
 
 use crate::components::{button, panel, section_header, PanelSide};
-use crate::icons::{
-    icon_chevron_down, icon_chevron_right, icon_help_circle, icon_plus, icon_settings, icon_x,
-};
+use crate::prelude::*;
 use crate::state::SavedProject;
-use crate::theme::theme;
 
 use super::WorkspaceView;
 
@@ -60,30 +57,26 @@ impl WorkspaceView {
         let remove_repo = project.repo_root.clone();
         let add_session_repo = project.repo_root.clone();
 
-        let chevron = if is_collapsed {
-            icon_chevron_right()
-                .size_3()
-                .text_color(t.text_dim)
-                .into_any_element()
+        let chevron_icon = if is_collapsed {
+            IconName::ChevronRight
         } else {
-            icon_chevron_down()
-                .size_3()
-                .text_color(t.text_dim)
-                .into_any_element()
+            IconName::ChevronDown
         };
 
         let project_row_id =
             gpui::ElementId::Name(format!("proj-{}", project.display_name).into());
+        let toggle_id =
+            gpui::ElementId::Name(format!("toggle-{}", project.display_name).into());
+        let select_id =
+            gpui::ElementId::Name(format!("select-{}", project.display_name).into());
 
-        let mut container = div().flex().flex_col().border_b_1().border_color(t.border_subtle);
+        let mut container = v_flex().border_b_1().border_color(t.border_subtle);
 
         // Project header row
         container = container.child(
-            div()
+            h_flex()
                 .id(project_row_id)
                 .group("project-row")
-                .flex()
-                .items_center()
                 .gap_1()
                 .px_3()
                 .py_2()
@@ -98,35 +91,26 @@ impl WorkspaceView {
                 .hover(|style| style.bg(t.hover_overlay))
                 .child(
                     div()
-                        .text_color(t.text_dim)
+                        .id(toggle_id)
                         .w(px(12.))
                         .flex_shrink_0()
                         .cursor_pointer()
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |this, event, window, cx| {
-                                this.on_toggle_project_collapse(
-                                    toggle_repo.clone(),
-                                    event,
-                                    window,
-                                    cx,
-                                )
-                            }),
-                        )
-                        .child(chevron),
+                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                            this.on_toggle_project_collapse(toggle_repo.clone(), cx)
+                        }))
+                        .child(Icon::new(chevron_icon).size(px(12.)).color(Color::Dim)),
                 )
                 .child(
                     div()
+                        .id(select_id)
                         .flex_1()
                         .min_w_0()
                         .overflow_hidden()
                         .when(project.last_known_valid, |row| {
-                            row.cursor_pointer().on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |this, event, window, cx| {
+                            row.cursor_pointer().on_click(
+                                cx.listener(move |this, _event, window, cx| {
                                     this.on_select_project(
                                         select_repo.clone(),
-                                        event,
                                         window,
                                         cx,
                                     )
@@ -145,54 +129,31 @@ impl WorkspaceView {
                         ),
                 )
                 .child(
-                    div()
-                        .flex()
-                        .items_center()
+                    h_flex()
                         .gap_1()
                         .flex_shrink_0()
                         .invisible()
                         .group_hover("project-row", |style| style.visible())
                         .when(project.last_known_valid, |el| {
                             el.child(
-                                div()
-                                    .id("add-session-btn")
-                                    .cursor_pointer()
-                                    .px_1()
-                                    .text_color(t.text_dim)
-                                    .hover(|style| style.text_color(t.text_primary))
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |this, event, window, cx| {
-                                            this.on_add_session(
-                                                add_session_repo.clone(),
-                                                event,
-                                                window,
-                                                cx,
-                                            )
-                                        }),
-                                    )
-                                    .child(icon_plus().size_3p5().text_color(t.text_dim)),
-                            )
-                        })
-                        .child(
-                            div()
-                                .id("remove-project-btn")
-                                .cursor_pointer()
-                                .px_1()
-                                .text_color(t.text_dim)
-                                .hover(|style| style.text_color(t.accent_red))
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event, window, cx| {
-                                        this.on_remove_project(
-                                            remove_repo.clone(),
-                                            event,
+                                IconButton::new("add-session-btn", IconName::Plus)
+                                    .icon_size(px(14.))
+                                    .on_click(cx.listener(move |this, _event, window, cx| {
+                                        this.on_add_session(
+                                            add_session_repo.clone(),
                                             window,
                                             cx,
                                         )
-                                    }),
-                                )
-                                .child(icon_x().size_3p5().text_color(t.text_dim)),
+                                    })),
+                            )
+                        })
+                        .child(
+                            IconButton::new("remove-project-btn", IconName::X)
+                                .icon_size(px(14.))
+                                .hover_color(t.accent_red)
+                                .on_click(cx.listener(move |this, _event, _window, cx| {
+                                    this.on_remove_project(remove_repo.clone(), cx)
+                                })),
                         ),
                 ),
         );
@@ -303,11 +264,9 @@ impl WorkspaceView {
 
         let show_badge = show_session_shortcuts && is_project_selected && session_index < 9;
 
-        div()
+        h_flex()
             .id(session_row_id)
             .group("session-row")
-            .flex()
-            .items_center()
             .justify_between()
             .pl(px(28.))
             .pr_3()
@@ -333,27 +292,18 @@ impl WorkspaceView {
             })
             .child(name_content)
             .child(
-                div()
-                    .id("delete-session-btn")
-                    .cursor_pointer()
-                    .px_1()
-                    .text_color(t.text_dim)
-                    .invisible()
-                    .group_hover("session-row", |style| style.visible())
-                    .hover(|style| style.text_color(t.accent_red))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |this, event, window, cx| {
-                            this.on_delete_session(
-                                delete_repo.clone(),
-                                delete_session_id.clone(),
-                                event,
-                                window,
-                                cx,
-                            )
-                        }),
-                    )
-                    .child(icon_x().size_3p5().text_color(t.text_dim)),
+                IconButton::new("delete-session-btn", IconName::X)
+                    .icon_size(px(14.))
+                    .hover_color(t.accent_red)
+                    .visible_on_hover("session-row")
+                    .on_click(cx.listener(move |this, _event, window, cx| {
+                        this.on_delete_session(
+                            delete_repo.clone(),
+                            delete_session_id.clone(),
+                            window,
+                            cx,
+                        )
+                    })),
             )
     }
 
@@ -363,10 +313,8 @@ impl WorkspaceView {
     ) -> impl IntoElement {
         let t = theme();
         let has_error = error.is_some();
-        let mut row = div()
+        let mut row = v_flex()
             .id("creating-session-row")
-            .flex()
-            .flex_col()
             .pl(px(28.))
             .pr_3()
             .py(px(6.))
@@ -398,9 +346,7 @@ impl WorkspaceView {
     fn render_sidebar_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
 
-        div()
-            .flex()
-            .items_center()
+        h_flex()
             .justify_between()
             .px_3()
             .py_2()
@@ -410,49 +356,34 @@ impl WorkspaceView {
             .bg(t.bg_surface)
             .child(
                 button()
+                    .id("add-project-btn")
                     .flex()
                     .items_center()
                     .gap_1()
                     .text_xs()
-                    .child(icon_plus().size_3().text_color(t.text_primary))
+                    .child(Icon::new(IconName::Plus).size(px(12.)).color(Color::Default))
                     .child("Add")
-                    .on_mouse_up(MouseButton::Left, cx.listener(Self::on_add_project)),
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.on_add_project(window, cx);
+                    })),
             )
             .child(
-                div()
-                    .flex()
-                    .items_center()
+                h_flex()
                     .gap_1()
                     .child(
-                        div()
-                            .id("help-btn")
-                            .cursor_pointer()
-                            .px_1()
-                            .text_color(t.text_dim)
-                            .hover(|style| style.text_color(t.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, _window, cx| {
-                                    this.state.viewing_help = !this.state.viewing_help;
-                                    cx.notify();
-                                }),
-                            )
-                            .child(icon_help_circle().size_3p5().text_color(t.text_dim)),
+                        IconButton::new("help-btn", IconName::HelpCircle)
+                            .icon_size(px(14.))
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.state.viewing_help = !this.state.viewing_help;
+                                cx.notify();
+                            })),
                     )
                     .child(
-                        div()
-                            .id("settings-btn")
-                            .cursor_pointer()
-                            .px_1()
-                            .text_color(t.text_dim)
-                            .hover(|style| style.text_color(t.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _event, _window, cx| {
-                                    this.on_open_settings(cx);
-                                }),
-                            )
-                            .child(icon_settings().size_3p5().text_color(t.text_dim)),
+                        IconButton::new("settings-btn", IconName::Settings)
+                            .icon_size(px(14.))
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.on_open_settings(cx);
+                            })),
                     ),
             )
     }

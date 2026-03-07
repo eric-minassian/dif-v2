@@ -92,3 +92,36 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
 pub fn theme() -> &'static Theme {
     &THEME
 }
+
+/// Semantic color names that resolve to `Hsla` via the active theme.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Color {
+    Default,
+    Muted,
+    Dim,
+    Green,
+    Red,
+    Yellow,
+    Custom(Hsla),
+}
+
+impl Color {
+    pub fn hsla(self) -> Hsla {
+        let t = theme();
+        match self {
+            Color::Default => t.text_primary,
+            Color::Muted => t.text_muted,
+            Color::Dim => t.text_dim,
+            Color::Green => t.accent_green,
+            Color::Red => t.accent_red,
+            Color::Yellow => t.accent_yellow,
+            Color::Custom(color) => color,
+        }
+    }
+}
+
+impl From<Hsla> for Color {
+    fn from(color: Hsla) -> Self {
+        Color::Custom(color)
+    }
+}

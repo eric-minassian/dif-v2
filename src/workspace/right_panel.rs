@@ -1,8 +1,6 @@
-use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton};
-
 use crate::components::{panel, section_header, PanelSide};
+use crate::prelude::*;
 use crate::state::{ActionPhase, BranchStatus, RepoCapabilities};
-use crate::theme::theme;
 
 use super::panel_action::{derive_panel_action, PanelAction};
 use super::WorkspaceView;
@@ -76,19 +74,15 @@ impl WorkspaceView {
                 this.on_close_checks_popover(cx);
             });
 
-        let mut panel_div = div()
+        let mut panel_div = v_flex()
             .relative()
             .flex_1()
             .min_h_0()
-            .flex()
-            .flex_col()
             .border_b_1()
             .border_color(t.border_default)
             .child(
                 section_header("Changes").child(
-                    div()
-                        .flex()
-                        .items_center()
+                    h_flex()
                         .gap_2()
                         .child(ci_status)
                         .child(pr_link),

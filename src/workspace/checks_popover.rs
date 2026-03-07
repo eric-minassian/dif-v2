@@ -1,8 +1,7 @@
-use gpui::{div, prelude::*, px, AnyElement, Context, Hsla, MouseButton};
+use gpui::Hsla;
 
-use crate::icons::{icon_check, icon_circle_dot, icon_external_link, icon_minus, icon_x};
+use crate::prelude::*;
 use crate::state::{BranchStatus, CheckBucket, CiCheck};
-use crate::theme::theme;
 
 use super::WorkspaceView;
 
@@ -12,7 +11,6 @@ impl WorkspaceView {
         branch_status: &BranchStatus,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let t = theme();
         let checks = &branch_status.checks;
 
         if checks.is_empty() {
@@ -29,20 +27,11 @@ impl WorkspaceView {
             .count();
 
         let status_icon = if fail_count > 0 {
-            icon_x()
-                .size(px(14.))
-                .text_color(t.accent_red)
-                .into_any_element()
+            Icon::new(IconName::X).size(px(14.)).color(Color::Red).into_any_element()
         } else if pending_count > 0 {
-            icon_circle_dot()
-                .size(px(14.))
-                .text_color(t.accent_yellow)
-                .into_any_element()
+            Icon::new(IconName::CircleDot).size(px(14.)).color(Color::Yellow).into_any_element()
         } else {
-            icon_check()
-                .size(px(14.))
-                .text_color(t.accent_green)
-                .into_any_element()
+            Icon::new(IconName::Check).size(px(14.)).color(Color::Green).into_any_element()
         };
 
         div()
@@ -50,12 +39,9 @@ impl WorkspaceView {
             .flex_shrink_0()
             .cursor_pointer()
             .hover(|s| s.opacity(0.7))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _event, _window, cx| {
-                    this.on_toggle_checks_popover(cx);
-                }),
-            )
+            .on_click(cx.listener(|this, _event, _window, cx| {
+                this.on_toggle_checks_popover(cx);
+            }))
             .child(status_icon)
             .into_any_element()
     }
@@ -126,10 +112,8 @@ impl WorkspaceView {
             let url_owned = url.clone();
 
             popover = popover.child(
-                div()
+                h_flex()
                     .id("popover-pr-row")
-                    .flex()
-                    .items_center()
                     .gap(px(8.))
                     .px_2()
                     .py(px(6.))
@@ -137,7 +121,7 @@ impl WorkspaceView {
                     .border_color(t.border_subtle)
                     .cursor_pointer()
                     .hover(|s| s.bg(gpui::rgba(0xffffff08)))
-                    .on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+                    .on_click(move |_event, _window, _cx| {
                         let _ = std::process::Command::new("open")
                             .arg(&url_owned)
                             .spawn();
@@ -165,7 +149,7 @@ impl WorkspaceView {
                     // External link icon
                     .child(
                         div().flex_shrink_0().child(
-                            icon_external_link()
+                            Icon::new(IconName::ExternalLink).svg()
                                 .size(px(12.))
                                 .text_color(t.text_dim),
                         ),
@@ -189,19 +173,19 @@ impl WorkspaceView {
 
         let (status_icon, status_color) = match check.bucket {
             CheckBucket::Pass => (
-                icon_check().size(px(12.)).into_any_element(),
+                Icon::new(IconName::Check).size(px(12.)).into_any_element(),
                 t.accent_green,
             ),
             CheckBucket::Fail => (
-                icon_x().size(px(12.)).into_any_element(),
+                Icon::new(IconName::X).size(px(12.)).into_any_element(),
                 t.accent_red,
             ),
             CheckBucket::Pending => (
-                icon_circle_dot().size(px(12.)).into_any_element(),
+                Icon::new(IconName::CircleDot).size(px(12.)).into_any_element(),
                 t.accent_yellow,
             ),
             CheckBucket::Skipping | CheckBucket::Cancel => (
-                icon_minus().size(px(12.)).into_any_element(),
+                Icon::new(IconName::Minus).size(px(12.)).into_any_element(),
                 t.text_dim,
             ),
         };
@@ -210,11 +194,9 @@ impl WorkspaceView {
         let link = check.link.clone();
         let has_link = link.is_some();
 
-        div()
+        h_flex()
             .id(row_id)
             .group("popover-check-row")
-            .flex()
-            .items_center()
             .gap(px(6.))
             .px_2()
             .py(px(4.))
@@ -222,7 +204,7 @@ impl WorkspaceView {
                 el.cursor_pointer()
                     .hover(|s| s.bg(gpui::rgba(0xffffff08)))
             })
-            .on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+            .on_click(move |_event, _window, _cx| {
                 if let Some(url) = &link {
                     let _ = std::process::Command::new("open").arg(url).spawn();
                 }

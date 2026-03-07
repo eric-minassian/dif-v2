@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use gpui::{Context, CursorStyle, MouseButton, div, prelude::*, px};
+use gpui::CursorStyle;
 
 use crate::git;
+use crate::prelude::*;
 use crate::state::{
     AppConfig, GitChange, ProjectRuntime, ResizingSidebar, SavedProject,
 };
-use crate::theme::theme;
 
 use super::WorkspaceView;
 

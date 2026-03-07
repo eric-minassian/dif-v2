@@ -1,7 +1,4 @@
-use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
-
-use crate::icons::icon_x;
-use crate::theme::theme;
+use crate::prelude::*;
 
 use super::WorkspaceView;
 
@@ -62,9 +59,7 @@ impl WorkspaceView {
     pub(crate) fn render_help_view(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
 
-        let header = div()
-            .flex()
-            .items_center()
+        let header = h_flex()
             .justify_between()
             .px_3()
             .py_2()
@@ -88,34 +83,27 @@ impl WorkspaceView {
                     .bg(t.bg_elevated)
                     .text_color(t.text_muted)
                     .hover(|style| style.bg(t.bg_elevated_hover).text_color(t.text_primary))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _event, _window, cx| {
-                            this.state.viewing_help = false;
-                            cx.notify();
-                        }),
-                    )
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.state.viewing_help = false;
+                        cx.notify();
+                    }))
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(icon_x().size_3().text_color(t.text_muted))
+                    .child(Icon::new(IconName::X).size(px(12.)).color(Color::Muted))
                     .child("Esc"),
             );
 
-        let mut content = div()
+        let mut content = v_flex()
             .id("help-content")
             .flex_1()
             .min_h_0()
             .overflow_scroll()
             .p_4()
-            .flex()
-            .flex_col()
             .gap_4();
 
         for section in SECTIONS {
-            let mut section_div = div()
-                .flex()
-                .flex_col()
+            let mut section_div = v_flex()
                 .gap_1()
                 .child(
                     div()
@@ -128,9 +116,7 @@ impl WorkspaceView {
 
             for entry in section.entries {
                 section_div = section_div.child(
-                    div()
-                        .flex()
-                        .items_center()
+                    h_flex()
                         .justify_between()
                         .px_3()
                         .py(px(5.))
@@ -159,12 +145,10 @@ impl WorkspaceView {
             content = content.child(section_div);
         }
 
-        div()
+        v_flex()
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .flex()
-            .flex_col()
             .child(header)
             .child(content)
             .into_any_element()

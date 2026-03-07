@@ -142,10 +142,8 @@ pub(crate) fn encode_key_named(
     alt: bool,
 ) -> Option<Vec<u8>> {
     // Modifier parameter for CSI sequences: 1 + (shift*1 + alt*2 + ctrl*4)
-    let modifier_param = 1
-        + if shift { 1 } else { 0 }
-        + if alt { 2 } else { 0 }
-        + if control { 4 } else { 0 };
+    let modifier_param =
+        1 + if shift { 1 } else { 0 } + if alt { 2 } else { 0 } + if control { 4 } else { 0 };
     let has_modifiers = modifier_param > 1;
 
     // Helper: CSI sequence with optional modifier

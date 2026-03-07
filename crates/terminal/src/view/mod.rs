@@ -206,12 +206,7 @@ impl TerminalView {
         }
     }
 
-    pub(crate) fn on_clear(
-        &mut self,
-        _: &Clear,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_clear(&mut self, _: &Clear, _window: &mut Window, cx: &mut Context<Self>) {
         if let Some(input) = self.input.as_ref() {
             // Send form feed (clear) and then redraw prompt
             input.send(b"\x0c");
@@ -310,22 +305,19 @@ impl Render for TerminalView {
         let is_focused = self.focus_handle.is_focused(window);
         if is_focused != self.was_focused {
             self.was_focused = is_focused;
-            if self.session.focus_events_enabled() {
-                if let Some(input) = self.input.as_ref() {
-                    if is_focused {
-                        input.send(b"\x1b[I");
-                    } else {
-                        input.send(b"\x1b[O");
-                    }
+            if self.session.focus_events_enabled()
+                && let Some(input) = self.input.as_ref()
+            {
+                if is_focused {
+                    input.send(b"\x1b[I");
+                } else {
+                    input.send(b"\x1b[O");
                 }
             }
         }
 
         if self.session.window_title_updates_enabled() {
-            let title = self
-                .session
-                .title()
-                .unwrap_or("Terminal");
+            let title = self.session.title().unwrap_or("Terminal");
 
             if self.last_window_title.as_deref() != Some(title) {
                 window.set_window_title(title);

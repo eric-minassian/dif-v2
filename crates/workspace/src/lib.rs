@@ -19,26 +19,23 @@ pub mod storage;
 mod tab_bar;
 mod titlebar;
 mod ui_state;
-mod updater;
 mod update_actions;
+mod updater;
 
 use std::path::{Path, PathBuf};
 
-use gpui::{
-    actions, App, CursorStyle, Entity, FocusHandle, Focusable, MouseButton,
-    Subscription,
-};
+use gpui::{App, CursorStyle, Entity, FocusHandle, Focusable, MouseButton, Subscription, actions};
 
+use config::{AppConfig, DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH};
+use runtime::{AppState, ProjectRuntime, SessionRuntime, TerminalTab};
 use ui::empty_state;
 use ui::prelude::*;
-use config::{
-    AppConfig, DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH,
-};
-use runtime::{AppState, ProjectRuntime, SessionRuntime, TerminalTab};
-use ui_state::ResizingSidebar;
 use ui::text_input::TextInput;
+use ui_state::ResizingSidebar;
 
-use helpers::{pick_initial_selection, pick_initial_session, refresh_project_validity, resize_handle};
+use helpers::{
+    pick_initial_selection, pick_initial_session, refresh_project_validity, resize_handle,
+};
 
 actions!(
     workspace,
@@ -146,10 +143,10 @@ impl WorkspaceView {
             _window_activation_sub: window_activation_sub,
             _git_poll_task: None,
         };
-        if let Some(repo) = this.state.selected_repo.clone() {
-            if let Some(session_id) = this.state.selected_session.clone() {
-                this.activate_session(repo, session_id, window, cx);
-            }
+        if let Some(repo) = this.state.selected_repo.clone()
+            && let Some(session_id) = this.state.selected_session.clone()
+        {
+            this.activate_session(repo, session_id, window, cx);
         }
 
         this.spawn_update_check(window, cx);
@@ -189,10 +186,10 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(runtime) = self.state.runtimes.get(repo_root) {
-            if runtime.session_runtimes.contains_key(session_id) {
-                return;
-            }
+        if let Some(runtime) = self.state.runtimes.get(repo_root)
+            && runtime.session_runtimes.contains_key(session_id)
+        {
+            return;
         }
 
         let working_dir = self.worktree_or_repo(repo_root, session_id);
@@ -206,19 +203,19 @@ impl WorkspaceView {
         // Create initial side terminal tab
         let (side_tabs, selected_tab, next_id) =
             match terminal::spawn_terminal(window, cx, &working_dir) {
-            Ok(view) => {
-                let tab = TerminalTab {
-                    id: "1".to_string(),
-                    view,
-                };
-                (vec![tab], Some("1".to_string()), 2)
-            }
-            Err(error) => {
-                self.state.flash_error =
-                    Some(format!("Failed to create side terminal: {error}"));
-                (vec![], None, 1)
-            }
-        };
+                Ok(view) => {
+                    let tab = TerminalTab {
+                        id: "1".to_string(),
+                        view,
+                    };
+                    (vec![tab], Some("1".to_string()), 2)
+                }
+                Err(error) => {
+                    self.state.flash_error =
+                        Some(format!("Failed to create side terminal: {error}"));
+                    (vec![], None, 1)
+                }
+            };
 
         let session_runtime = SessionRuntime {
             main_terminal,
@@ -268,14 +265,10 @@ impl WorkspaceView {
             match result {
                 Ok(output) if !output.status.success() => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    self.state.flash_error = Some(format!(
-                        "Init command failed: {cmd}\n{stderr}"
-                    ));
+                    self.state.flash_error = Some(format!("Init command failed: {cmd}\n{stderr}"));
                 }
                 Err(error) => {
-                    self.state.flash_error = Some(format!(
-                        "Init command failed: {cmd}\n{error}"
-                    ));
+                    self.state.flash_error = Some(format!("Init command failed: {cmd}\n{error}"));
                 }
                 _ => {}
             }
@@ -385,83 +378,87 @@ impl WorkspaceView {
 }
 
 impl WorkspaceView {
-    fn register_actions(&self, root: gpui::Stateful<gpui::Div>, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+    fn register_actions(
+        &self,
+        root: gpui::Stateful<gpui::Div>,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
         root.on_action(cx.listener(|this, _: &NewSideTab, window, cx| {
-                this.on_add_side_tab(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &CloseSideTab, _window, cx| {
-                this.on_close_active_side_tab(cx);
-            }))
-            .on_action(cx.listener(|_this, _: &MinimizeWindow, window, _cx| {
-                window.minimize_window();
-            }))
-            .on_action(cx.listener(|_this, _: &ZoomWindow, window, _cx| {
-                window.zoom_window();
-            }))
-            .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
-                if this.state.viewing_help {
-                    this.state.viewing_help = false;
-                    cx.notify();
-                } else if this.state.viewing_settings {
-                    this.on_close_settings(cx);
-                } else if this.state.viewing_diff.is_some() {
-                    this.on_close_diff(cx);
-                } else {
-                    cx.propagate();
-                }
-            }))
-            .on_action(cx.listener(|this, _: &ToggleLeftSidebar, _window, cx| {
-                this.on_toggle_left_sidebar(cx);
-            }))
-            .on_action(cx.listener(|this, _: &ToggleRightSidebar, _window, cx| {
-                this.on_toggle_right_sidebar(cx);
-            }))
-            .on_action(cx.listener(|this, _: &RefreshGitStatus, window, cx| {
-                this.on_refresh_git_status(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession1, window, cx| {
-                this.select_session_by_index(0, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession2, window, cx| {
-                this.select_session_by_index(1, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession3, window, cx| {
-                this.select_session_by_index(2, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession4, window, cx| {
-                this.select_session_by_index(3, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession5, window, cx| {
-                this.select_session_by_index(4, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession6, window, cx| {
-                this.select_session_by_index(5, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession7, window, cx| {
-                this.select_session_by_index(6, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession8, window, cx| {
-                this.select_session_by_index(7, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SelectSession9, window, cx| {
-                this.select_session_by_index(8, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &OpenSettings, _window, cx| {
-                this.on_open_settings(cx);
-            }))
-            .on_action(cx.listener(|this, _: &NewSession, window, cx| {
-                this.on_new_session(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &FocusTerminal, window, cx| {
-                this.on_focus_terminal(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &RunGitAction, window, cx| {
-                this.on_run_git_action(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &ToggleHelp, _window, cx| {
-                this.state.viewing_help = !this.state.viewing_help;
+            this.on_add_side_tab(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &CloseSideTab, _window, cx| {
+            this.on_close_active_side_tab(cx);
+        }))
+        .on_action(cx.listener(|_this, _: &MinimizeWindow, window, _cx| {
+            window.minimize_window();
+        }))
+        .on_action(cx.listener(|_this, _: &ZoomWindow, window, _cx| {
+            window.zoom_window();
+        }))
+        .on_action(cx.listener(|this, _: &CloseDiffView, _window, cx| {
+            if this.state.viewing_help {
+                this.state.viewing_help = false;
                 cx.notify();
-            }))
+            } else if this.state.viewing_settings {
+                this.on_close_settings(cx);
+            } else if this.state.viewing_diff.is_some() {
+                this.on_close_diff(cx);
+            } else {
+                cx.propagate();
+            }
+        }))
+        .on_action(cx.listener(|this, _: &ToggleLeftSidebar, _window, cx| {
+            this.on_toggle_left_sidebar(cx);
+        }))
+        .on_action(cx.listener(|this, _: &ToggleRightSidebar, _window, cx| {
+            this.on_toggle_right_sidebar(cx);
+        }))
+        .on_action(cx.listener(|this, _: &RefreshGitStatus, window, cx| {
+            this.on_refresh_git_status(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession1, window, cx| {
+            this.select_session_by_index(0, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession2, window, cx| {
+            this.select_session_by_index(1, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession3, window, cx| {
+            this.select_session_by_index(2, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession4, window, cx| {
+            this.select_session_by_index(3, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession5, window, cx| {
+            this.select_session_by_index(4, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession6, window, cx| {
+            this.select_session_by_index(5, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession7, window, cx| {
+            this.select_session_by_index(6, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession8, window, cx| {
+            this.select_session_by_index(7, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &SelectSession9, window, cx| {
+            this.select_session_by_index(8, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &OpenSettings, _window, cx| {
+            this.on_open_settings(cx);
+        }))
+        .on_action(cx.listener(|this, _: &NewSession, window, cx| {
+            this.on_new_session(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &FocusTerminal, window, cx| {
+            this.on_focus_terminal(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &RunGitAction, window, cx| {
+            this.on_run_git_action(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &ToggleHelp, _window, cx| {
+            this.state.viewing_help = !this.state.viewing_help;
+            cx.notify();
+        }))
     }
 }
 
@@ -486,16 +483,14 @@ impl Render for WorkspaceView {
         let left_collapsed = self.state.left_sidebar_collapsed;
         let right_collapsed = self.state.right_sidebar_collapsed;
 
-        let root = div()
-            .id("workspace")
-            .track_focus(&self.focus_handle);
+        let root = div().id("workspace").track_focus(&self.focus_handle);
 
         self.register_actions(root, cx)
-            .on_modifiers_changed(cx.listener(
-                |_, _: &gpui::ModifiersChangedEvent, _window, cx| {
+            .on_modifiers_changed(
+                cx.listener(|_, _: &gpui::ModifiersChangedEvent, _window, cx| {
                     cx.notify();
-                },
-            ))
+                }),
+            )
             .on_mouse_move(cx.listener(Self::on_resize_drag))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_resize_end))
             .when(is_resizing, |el| el.cursor(CursorStyle::ResizeLeftRight))

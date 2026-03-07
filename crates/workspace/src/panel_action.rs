@@ -1,8 +1,8 @@
 use gpui::Hsla;
 
+use crate::runtime::ActionPhase;
 use git::{BranchStatus, CheckBucket, RepoCapabilities};
 use ui::prelude::*;
-use crate::runtime::ActionPhase;
 
 use crate::WorkspaceView;
 
@@ -139,14 +139,16 @@ impl WorkspaceView {
             .when(!is_busy, |el| {
                 el.cursor_pointer()
                     .hover(|style| style.bg(t.bg_elevated_hover))
-                    .on_click(cx.listener(move |this, _event, window, cx| match action_clone {
-                        PanelAction::Commit => this.on_commit(window, cx),
-                        PanelAction::Amend => this.on_amend(window, cx),
-                        PanelAction::CreatePR => this.on_create_pr(window, cx),
-                        PanelAction::Rebase => this.on_rebase(window, cx),
-                        PanelAction::CloseSession => this.on_close_session(window, cx),
-                        PanelAction::None => {}
-                    }))
+                    .on_click(
+                        cx.listener(move |this, _event, window, cx| match action_clone {
+                            PanelAction::Commit => this.on_commit(window, cx),
+                            PanelAction::Amend => this.on_amend(window, cx),
+                            PanelAction::CreatePR => this.on_create_pr(window, cx),
+                            PanelAction::Rebase => this.on_rebase(window, cx),
+                            PanelAction::CloseSession => this.on_close_session(window, cx),
+                            PanelAction::None => {}
+                        }),
+                    )
             })
             .child(label)
             .into_any_element()
@@ -232,12 +234,7 @@ impl WorkspaceView {
             .on_click(move |_event, _window, _cx| {
                 let _ = std::process::Command::new("open").arg(&url).spawn();
             })
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(t.text_muted)
-                    .child(pr_label),
-            )
+            .child(div().text_xs().text_color(t.text_muted).child(pr_label))
             .child(
                 Icon::new(IconName::ExternalLink)
                     .size(px(12.))

@@ -1,11 +1,10 @@
-use git;
-use git::conventional::is_conventional_commit;
-use git::CheckBucket;
-use ui::prelude::*;
 use crate::runtime::ActionPhase;
+use git::CheckBucket;
+use git::conventional::is_conventional_commit;
+use ui::prelude::*;
 
-use crate::panel_action::{derive_panel_action, PanelAction};
 use crate::WorkspaceView;
+use crate::panel_action::{PanelAction, derive_panel_action};
 
 impl WorkspaceView {
     /// Cmd+Enter: trigger the current git action based on state.
@@ -252,7 +251,11 @@ impl WorkspaceView {
 
         let pr_title = {
             let name = self.session_name(&repo);
-            if name.is_empty() { "changes".to_string() } else { name }
+            if name.is_empty() {
+                "changes".to_string()
+            } else {
+                name
+            }
         };
         let working_dir = self.working_dir(&repo);
         let view = cx.entity().clone();
@@ -332,11 +335,7 @@ impl WorkspaceView {
             .detach();
     }
 
-    pub(crate) fn on_toggle_pr_auto_merge(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_toggle_pr_auto_merge(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };

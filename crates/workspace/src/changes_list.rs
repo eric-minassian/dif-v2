@@ -46,9 +46,7 @@ impl WorkspaceView {
             } else {
                 t.transparent
             })
-            .when(is_viewing, |el| {
-                el.border_l_2().border_color(t.accent_blue)
-            })
+            .when(is_viewing, |el| el.border_l_2().border_color(t.accent_blue))
             .when(!popover_open, |el| {
                 el.hover(|style| style.bg(t.hover_overlay))
             })
@@ -67,7 +65,11 @@ impl WorkspaceView {
                         el.bg(t.accent_blue)
                             .border_color(t.accent_blue)
                             .text_color(gpui::rgb(0x1e1e1e))
-                            .child(Icon::new(IconName::Check).size(px(10.)).color(Color::Custom(t.bg_surface)))
+                            .child(
+                                Icon::new(IconName::Check)
+                                    .size(px(10.))
+                                    .color(Color::Custom(t.bg_surface)),
+                            )
                     })
                     .when(!is_staged, |el| el.border_color(t.text_dim))
                     .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -100,20 +102,10 @@ impl WorkspaceView {
                     .text_xs()
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.on_open_diff(
-                            file_path.clone(),
-                            status_code.clone(),
-                            window,
-                            cx,
-                        );
+                        this.on_open_diff(file_path.clone(), status_code.clone(), window, cx);
                     }))
                     .when_some(dir_part, |el, dir| {
-                        el.child(
-                            div()
-                                .flex_shrink_0()
-                                .text_color(t.text_dim)
-                                .child(dir),
-                        )
+                        el.child(div().flex_shrink_0().text_color(t.text_dim).child(dir))
                     })
                     .child(
                         div()

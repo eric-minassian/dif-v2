@@ -1,10 +1,10 @@
 use super::super::Rgb;
 
+use super::TerminalView;
 use super::clipboard::shell_quote;
 use super::drawing::cursor_color_for_background;
 use super::helpers::window_position_to_local;
 use super::url::{url_at_byte_index, url_at_column_in_line};
-use super::TerminalView;
 
 #[test]
 fn url_detection_finds_https_links() {
@@ -74,7 +74,10 @@ fn shell_quote_leaves_simple_paths_unquoted() {
 
 #[test]
 fn shell_quote_quotes_paths_with_spaces() {
-    assert_eq!(shell_quote("/path/to/my file.png"), "'/path/to/my file.png'");
+    assert_eq!(
+        shell_quote("/path/to/my file.png"),
+        "'/path/to/my file.png'"
+    );
 }
 
 #[test]
@@ -99,8 +102,7 @@ fn shell_quote_quotes_special_characters() {
 fn word_boundary_detection() {
     // Test the is_word_char logic used in select_word_at_index
     let line = b"hello world foo-bar";
-    let is_word_char =
-        |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.';
+    let is_word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.';
 
     // 'h' at 0 is word char
     assert!(is_word_char(line[0]));

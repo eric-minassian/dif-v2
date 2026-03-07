@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use ui::prelude::*;
 use crate::ui_state::UpdateStatus;
-use ui::text_input::{TextInput, TextInputEvent};
 use crate::updater;
+use ui::prelude::*;
+use ui::text_input::{TextInput, TextInputEvent};
 
 use crate::{SettingsEdit, WorkspaceView};
 
@@ -73,10 +73,9 @@ impl WorkspaceView {
             .projects
             .iter_mut()
             .find(|p| p.repo_root == repo_root)
+            && index < project.settings.workspace_init_commands.len()
         {
-            if index < project.settings.workspace_init_commands.len() {
-                project.settings.workspace_init_commands.remove(index);
-            }
+            project.settings.workspace_init_commands.remove(index);
         }
         self.persist_config();
         cx.notify();
@@ -170,7 +169,10 @@ impl WorkspaceView {
             );
 
         match &self.state.update_status {
-            UpdateStatus::Available { version, download_url } => {
+            UpdateStatus::Available {
+                version,
+                download_url,
+            } => {
                 let url = download_url.clone();
                 let ver = version.clone();
                 about_section = about_section.child(
@@ -290,9 +292,8 @@ impl WorkspaceView {
             {
                 let toggle_repo = repo_root.clone();
                 let is_enabled = project.settings.enforce_conventional_commits;
-                let toggle_id = gpui::ElementId::Name(
-                    format!("cc-toggle-{}", project.display_name).into(),
-                );
+                let toggle_id =
+                    gpui::ElementId::Name(format!("cc-toggle-{}", project.display_name).into());
                 project_section = project_section.child(
                     h_flex()
                         .mt_2()
@@ -307,12 +308,9 @@ impl WorkspaceView {
                                         .text_color(t.text_secondary)
                                         .child("Enforce conventional commits"),
                                 )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(t.text_dim)
-                                        .child("Reject commits not matching type[(scope)]: description"),
-                                ),
+                                .child(div().text_xs().text_color(t.text_dim).child(
+                                    "Reject commits not matching type[(scope)]: description",
+                                )),
                         )
                         .child(
                             div()
@@ -322,7 +320,11 @@ impl WorkspaceView {
                                 .py_1()
                                 .rounded_sm()
                                 .text_xs()
-                                .bg(if is_enabled { t.accent_blue } else { t.bg_surface })
+                                .bg(if is_enabled {
+                                    t.accent_blue
+                                } else {
+                                    t.bg_surface
+                                })
                                 .text_color(if is_enabled { t.bg_panel } else { t.text_muted })
                                 .hover(|style| style.bg(t.bg_elevated_hover))
                                 .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -421,9 +423,8 @@ impl WorkspaceView {
                 );
             } else {
                 let add_repo = repo_root.clone();
-                let add_btn_id = gpui::ElementId::Name(
-                    format!("add-cmd-{}", project.display_name).into(),
-                );
+                let add_btn_id =
+                    gpui::ElementId::Name(format!("add-cmd-{}", project.display_name).into());
                 project_section = project_section.child(
                     div()
                         .id(add_btn_id)

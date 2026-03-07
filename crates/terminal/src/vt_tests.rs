@@ -176,7 +176,9 @@ impl TestTerm {
     // -- Assertion helpers ---------------------------------------------------
 
     fn cursor_pos(&self) -> (u16, u16) {
-        self.session.cursor_position().expect("cursor_position() returned None")
+        self.session
+            .cursor_position()
+            .expect("cursor_position() returned None")
     }
 
     fn assert_cursor_pos(&self, col: u16, row: u16) {
@@ -592,10 +594,26 @@ fn ed_1_erases_from_start_to_cursor() {
     t.cup(4, 1);
     t.feed_str("DDDDDDDDDD");
     // Verify content before erase
-    assert!(t.row(0).starts_with("AAAAAAAAAA"), "pre: row 0 = {:?}", t.row(0));
-    assert!(t.row(1).starts_with("BBBBBBBBBB"), "pre: row 1 = {:?}", t.row(1));
-    assert!(t.row(2).starts_with("CCCCCCCCCC"), "pre: row 2 = {:?}", t.row(2));
-    assert!(t.row(3).starts_with("DDDDDDDDDD"), "pre: row 3 = {:?}", t.row(3));
+    assert!(
+        t.row(0).starts_with("AAAAAAAAAA"),
+        "pre: row 0 = {:?}",
+        t.row(0)
+    );
+    assert!(
+        t.row(1).starts_with("BBBBBBBBBB"),
+        "pre: row 1 = {:?}",
+        t.row(1)
+    );
+    assert!(
+        t.row(2).starts_with("CCCCCCCCCC"),
+        "pre: row 2 = {:?}",
+        t.row(2)
+    );
+    assert!(
+        t.row(3).starts_with("DDDDDDDDDD"),
+        "pre: row 3 = {:?}",
+        t.row(3)
+    );
     // Move cursor to row 3, col 5 and erase above
     t.cup(3, 5);
     t.erase_in_display(1);
@@ -689,7 +707,10 @@ fn ich_shifts_right() {
     let actual = t.row(0);
     assert!(actual.starts_with("AB"), "expected AB... got {actual:?}");
     // After the 2 blanks, the shifted chars should follow
-    assert!(actual.contains("CDEFGH"), "expected ...CDEFGH got {actual:?}");
+    assert!(
+        actual.contains("CDEFGH"),
+        "expected ...CDEFGH got {actual:?}"
+    );
 }
 
 // -- IL/DL (Insert/Delete Lines) ---
@@ -1101,13 +1122,22 @@ fn encode_arrow_with_alt() {
 fn ctrl_byte_basic_letters() {
     use gpui::Keystroke;
     let ctrl_a = Keystroke::parse("ctrl-a").unwrap();
-    assert_eq!(super::view::helpers::ctrl_byte_for_keystroke(&ctrl_a), Some(0x01));
+    assert_eq!(
+        super::view::helpers::ctrl_byte_for_keystroke(&ctrl_a),
+        Some(0x01)
+    );
 
     let ctrl_z = Keystroke::parse("ctrl-z").unwrap();
-    assert_eq!(super::view::helpers::ctrl_byte_for_keystroke(&ctrl_z), Some(0x1a));
+    assert_eq!(
+        super::view::helpers::ctrl_byte_for_keystroke(&ctrl_z),
+        Some(0x1a)
+    );
 
     let ctrl_m = Keystroke::parse("ctrl-m").unwrap();
-    assert_eq!(super::view::helpers::ctrl_byte_for_keystroke(&ctrl_m), Some(0x0d));
+    assert_eq!(
+        super::view::helpers::ctrl_byte_for_keystroke(&ctrl_m),
+        Some(0x0d)
+    );
 }
 
 #[test]
@@ -1263,7 +1293,15 @@ fn sgr_24bit_rgb_color() {
     t.sgr("38;2;100;150;200");
     t.feed_str("RGB");
     t.sgr_reset();
-    t.assert_fg_at(0, 1, Rgb { r: 100, g: 150, b: 200 });
+    t.assert_fg_at(
+        0,
+        1,
+        Rgb {
+            r: 100,
+            g: 150,
+            b: 200,
+        },
+    );
 }
 
 #[test]
@@ -1273,7 +1311,15 @@ fn sgr_24bit_bg_color() {
     t.sgr("48;2;50;75;100");
     t.feed_str("BG");
     t.sgr_reset();
-    t.assert_bg_at(0, 1, Rgb { r: 50, g: 75, b: 100 });
+    t.assert_bg_at(
+        0,
+        1,
+        Rgb {
+            r: 50,
+            g: 75,
+            b: 100,
+        },
+    );
 }
 
 #[test]
@@ -1303,7 +1349,11 @@ fn style_run_column_spans() {
     t.feed_str("BBB");
     let runs = t.style_runs(0);
     // Should have at least two runs: bold (cols 1-3) and normal (cols 4-6)
-    assert!(runs.len() >= 2, "expected at least 2 style runs, got {}", runs.len());
+    assert!(
+        runs.len() >= 2,
+        "expected at least 2 style runs, got {}",
+        runs.len()
+    );
     // First run should cover cols 1-3 with bold flag
     let bold_run = &runs[0];
     assert_eq!(bold_run.start_col, 1);

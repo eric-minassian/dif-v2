@@ -16,41 +16,86 @@ const SECTIONS: &[KeybindingSection] = &[
     KeybindingSection {
         title: "GENERAL",
         entries: &[
-            KeybindingEntry { keys: "Cmd + ,", description: "Open settings" },
-            KeybindingEntry { keys: "Cmd + /", description: "Toggle keyboard shortcuts" },
-            KeybindingEntry { keys: "Cmd + Q", description: "Quit" },
-            KeybindingEntry { keys: "Cmd + H", description: "Hide app" },
-            KeybindingEntry { keys: "Cmd + M", description: "Minimize window" },
-            KeybindingEntry { keys: "Escape", description: "Close current view" },
+            KeybindingEntry {
+                keys: "Cmd + ,",
+                description: "Open settings",
+            },
+            KeybindingEntry {
+                keys: "Cmd + /",
+                description: "Toggle keyboard shortcuts",
+            },
+            KeybindingEntry {
+                keys: "Cmd + Q",
+                description: "Quit",
+            },
+            KeybindingEntry {
+                keys: "Cmd + H",
+                description: "Hide app",
+            },
+            KeybindingEntry {
+                keys: "Cmd + M",
+                description: "Minimize window",
+            },
+            KeybindingEntry {
+                keys: "Escape",
+                description: "Close current view",
+            },
         ],
     },
     KeybindingSection {
         title: "GIT ACTIONS",
         entries: &[
-            KeybindingEntry { keys: "Cmd + Enter", description: "Run current git action (commit, amend, create PR, rebase)" },
-            KeybindingEntry { keys: "Cmd + R", description: "Refresh git status" },
+            KeybindingEntry {
+                keys: "Cmd + Enter",
+                description: "Run current git action (commit, amend, create PR, rebase)",
+            },
+            KeybindingEntry {
+                keys: "Cmd + R",
+                description: "Refresh git status",
+            },
         ],
     },
     KeybindingSection {
         title: "SESSIONS",
         entries: &[
-            KeybindingEntry { keys: "Cmd + N", description: "New session in current project" },
-            KeybindingEntry { keys: "Cmd + 1-9", description: "Switch to session by index" },
+            KeybindingEntry {
+                keys: "Cmd + N",
+                description: "New session in current project",
+            },
+            KeybindingEntry {
+                keys: "Cmd + 1-9",
+                description: "Switch to session by index",
+            },
         ],
     },
     KeybindingSection {
         title: "SIDEBARS",
         entries: &[
-            KeybindingEntry { keys: "Cmd + B", description: "Toggle left sidebar" },
-            KeybindingEntry { keys: "Cmd + Shift + B", description: "Toggle right sidebar" },
+            KeybindingEntry {
+                keys: "Cmd + B",
+                description: "Toggle left sidebar",
+            },
+            KeybindingEntry {
+                keys: "Cmd + Shift + B",
+                description: "Toggle right sidebar",
+            },
         ],
     },
     KeybindingSection {
         title: "TERMINALS",
         entries: &[
-            KeybindingEntry { keys: "Cmd + `", description: "Switch focus between main & side terminal" },
-            KeybindingEntry { keys: "Cmd + T", description: "New side terminal tab" },
-            KeybindingEntry { keys: "Cmd + W", description: "Close side terminal tab" },
+            KeybindingEntry {
+                keys: "Cmd + `",
+                description: "Switch focus between main & side terminal",
+            },
+            KeybindingEntry {
+                keys: "Cmd + T",
+                description: "New side terminal tab",
+            },
+            KeybindingEntry {
+                keys: "Cmd + W",
+                description: "Close side terminal tab",
+            },
         ],
     },
 ];
@@ -103,16 +148,14 @@ impl WorkspaceView {
             .gap_4();
 
         for section in SECTIONS {
-            let mut section_div = v_flex()
-                .gap_1()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(t.text_muted)
-                        .mb_1()
-                        .child(section.title),
-                );
+            let mut section_div = v_flex().gap_1().child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(t.text_muted)
+                    .mb_1()
+                    .child(section.title),
+            );
 
             for entry in section.entries {
                 section_div = section_div.child(

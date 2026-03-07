@@ -59,12 +59,7 @@ impl TerminalView {
         }
     }
 
-    pub(crate) fn on_copy(
-        &mut self,
-        _: &Copy,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_copy(&mut self, _: &Copy, _window: &mut Window, cx: &mut Context<Self>) {
         let selection = self
             .selection
             .map(|s| s.range())

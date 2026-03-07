@@ -68,4 +68,3 @@ pub fn empty_state(message: &str) -> Div {
                 .child(message.to_string()),
         )
 }
-

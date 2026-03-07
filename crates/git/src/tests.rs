@@ -66,9 +66,10 @@ fn split_diff_insert_delete() {
     assert!(data.additions >= 2);
     assert!(data.deletions >= 1);
 
-    let has_insert = data.lines.iter().any(|l| {
-        l.kind == SplitLineKind::Insert || l.kind == SplitLineKind::Replace
-    });
+    let has_insert = data
+        .lines
+        .iter()
+        .any(|l| l.kind == SplitLineKind::Insert || l.kind == SplitLineKind::Replace);
     assert!(has_insert);
 }
 

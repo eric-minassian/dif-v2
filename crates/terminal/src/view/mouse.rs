@@ -5,14 +5,14 @@ use gpui::{
     TouchPhase, Window,
 };
 
+use super::ByteSelection;
+use super::TerminalView;
 use super::drawing::cell_metrics;
 use super::helpers::{
     byte_index_for_column_in_line, normal_mouse_sequence, sgr_mouse_button_value,
     sgr_mouse_sequence, window_position_to_local,
 };
 use super::url::url_at_column_in_line;
-use super::ByteSelection;
-use super::TerminalView;
 
 const DOUBLE_CLICK_INTERVAL_MS: u128 = 400;
 const DOUBLE_CLICK_DISTANCE_PX: f32 = 5.0;
@@ -55,16 +55,12 @@ impl TerminalView {
         }
 
         // Selection mode (shift held, no input, or no mouse reporting)
-        if event.modifiers.shift
-            || self.input.is_none()
-            || !self.session.mouse_reporting_enabled()
+        if event.modifiers.shift || self.input.is_none() || !self.session.mouse_reporting_enabled()
         {
             if event.button == MouseButton::Left {
                 let click_count = self.click_count_for_event(event);
 
-                if let Some(index) =
-                    self.mouse_position_to_viewport_index(event.position, window)
-                {
+                if let Some(index) = self.mouse_position_to_viewport_index(event.position, window) {
                     match click_count {
                         2 => {
                             // Double-click: select word
@@ -128,9 +124,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if event.modifiers.shift
-            || self.input.is_none()
-            || !self.session.mouse_reporting_enabled()
+        if event.modifiers.shift || self.input.is_none() || !self.session.mouse_reporting_enabled()
         {
             if let Some(selection) = self.selection {
                 if selection.range().is_empty() {
@@ -184,9 +178,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !event.modifiers.shift
-            && self.input.is_some()
-            && self.session.mouse_reporting_enabled()
+        if !event.modifiers.shift && self.input.is_some() && self.session.mouse_reporting_enabled()
         {
             let send_motion = if self.session.mouse_any_event_enabled() {
                 true
@@ -256,10 +248,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         // Accumulate sub-pixel scroll for smooth scrolling (like Zed)
-        let line_height = self
-            .last_cell_metrics
-            .map(|(_, h)| h)
-            .unwrap_or(16.0);
+        let line_height = self.last_cell_metrics.map(|(_, h)| h).unwrap_or(16.0);
 
         let delta_lines = match event.touch_phase {
             TouchPhase::Started => {
@@ -312,19 +301,19 @@ impl TerminalView {
 
         // Alt screen + alternate scroll mode: convert scroll to arrow keys
         // This is what makes scrolling work in vim, less, man, etc.
-        if self.session.alt_screen_active() {
-            if let Some(input) = self.input.as_ref() {
-                let key = if delta_lines > 0 {
-                    b"\x1b[B" // Down arrow
-                } else {
-                    b"\x1b[A" // Up arrow
-                };
-                let steps = delta_lines.unsigned_abs().min(10);
-                for _ in 0..steps {
-                    input.send(key);
-                }
-                return;
+        if self.session.alt_screen_active()
+            && let Some(input) = self.input.as_ref()
+        {
+            let key = if delta_lines > 0 {
+                b"\x1b[B" // Down arrow
+            } else {
+                b"\x1b[A" // Up arrow
+            };
+            let steps = delta_lines.unsigned_abs().min(10);
+            for _ in 0..steps {
+                input.send(key);
             }
+            return;
         }
 
         // Normal mode: scroll the viewport buffer

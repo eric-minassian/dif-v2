@@ -192,13 +192,7 @@ pub(crate) fn cell_metrics(window: &mut gpui::Window, font: &gpui::Font) -> Opti
     let run = style.to_run(1);
     let lines = window
         .text_system()
-        .shape_text(
-            SharedString::from("M"),
-            font_size,
-            &[run],
-            None,
-            Some(1),
-        )
+        .shape_text(SharedString::from("M"), font_size, &[run], None, Some(1))
         .ok()?;
     let line = lines.first()?;
 

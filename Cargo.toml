@@ -6,18 +6,18 @@ version = "0.12.0"
 edition = "2024"
 
 [workspace.dependencies]
-anyhow = "1.0"
+anyhow = "1.0.102"
 directories = "6.0"
-gpui = { git = "https://github.com/zed-industries/zed", rev = "cff3ac6f93f506330034652f0d2389591bfb45a0", package = "gpui" }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "9663d059bcf948689323753012982791e5094ba5", package = "gpui" }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-alacritty_terminal = "0.24"
-parking_lot = "0.12"
+serde_json = "1.0.149"
+alacritty_terminal = "0.25.1"
+parking_lot = "0.12.5"
 portable-pty = "0.9"
-smallvec = { version = "1.15", features = ["const_new"] }
+smallvec = { version = "1.15.1", features = ["const_new"] }
 unicode-width = "0.2"
-unicode-segmentation = "1.11"
-similar = "2"
+unicode-segmentation = "1.12.0"
+similar = "2.7.0"
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 git = { path = "crates/git" }
 terminal = { path = "crates/terminal" }
@@ -32,7 +32,8 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 gpui.workspace = true
-rust-embed = "8"
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "9663d059bcf948689323753012982791e5094ba5", package = "gpui_platform", features = ["font-kit"] }
+rust-embed = "8.11.0"
 terminal.workspace = true
 ui.workspace = true
 workspace.workspace = true

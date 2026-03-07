@@ -1,9 +1,9 @@
 use alacritty_terminal::event::{Event as AlacEvent, EventListener};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
-use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::term::Config as AlacConfig;
 use alacritty_terminal::term::Term;
+use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::vte::ansi::Processor;
 use parking_lot::FairMutex;
 use std::sync::{Arc, mpsc};
@@ -177,7 +177,10 @@ impl TerminalSession {
 
     pub fn hyperlink_at(&self, col: u16, row: u16) -> Option<String> {
         let term = self.term.lock();
-        let point = Point::new(Line(row.saturating_sub(1) as i32), Column(col.saturating_sub(1) as usize));
+        let point = Point::new(
+            Line(row.saturating_sub(1) as i32),
+            Column(col.saturating_sub(1) as usize),
+        );
         let cell = &term.grid()[point];
         cell.hyperlink().map(|h| h.uri().to_string())
     }
@@ -218,9 +221,7 @@ impl TerminalSession {
     pub fn feed(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error> {
         {
             let mut term = self.term.lock();
-            for byte in bytes {
-                self.processor.advance(&mut *term, *byte);
-            }
+            self.processor.advance(&mut *term, bytes);
         }
         self.drain_events();
         Ok(())
@@ -233,9 +234,7 @@ impl TerminalSession {
     ) -> Result<(), anyhow::Error> {
         {
             let mut term = self.term.lock();
-            for byte in bytes {
-                self.processor.advance(&mut *term, *byte);
-            }
+            self.processor.advance(&mut *term, bytes);
         }
         // Drain events, forwarding PtyWrite responses
         while let Ok(event) = self.event_rx.try_recv() {
@@ -399,10 +398,7 @@ impl TerminalSession {
         Ok(row_str)
     }
 
-    pub fn dump_viewport_row_style_runs(
-        &self,
-        row: u16,
-    ) -> Result<Vec<StyleRun>, anyhow::Error> {
+    pub fn dump_viewport_row_style_runs(&self, row: u16) -> Result<Vec<StyleRun>, anyhow::Error> {
         let term = self.term.lock();
         let cols = term.columns();
         let display_offset = term.grid().display_offset() as i32;
@@ -493,10 +489,7 @@ impl TerminalSession {
         }
         let cursor = term.grid().cursor.point;
         // Convert to 1-based
-        Some((
-            cursor.column.0 as u16 + 1,
-            cursor.line.0 as u16 + 1,
-        ))
+        Some((cursor.column.0 as u16 + 1, cursor.line.0 as u16 + 1))
     }
 
     pub fn scroll_viewport(&mut self, delta_lines: i32) -> Result<(), anyhow::Error> {

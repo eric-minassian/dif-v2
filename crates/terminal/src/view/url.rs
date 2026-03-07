@@ -1,5 +1,5 @@
-use super::helpers::byte_index_for_column_in_line;
 use super::TerminalView;
+use super::helpers::byte_index_for_column_in_line;
 
 fn is_url_byte(b: u8) -> bool {
     matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9')

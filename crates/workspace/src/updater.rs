@@ -39,8 +39,8 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
         return Err("Failed to fetch latest release".into());
     }
 
-    let body: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("JSON parse error: {e}"))?;
+    let body: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|e| format!("JSON parse error: {e}"))?;
 
     let tag = body["tag_name"]
         .as_str()

@@ -2,10 +2,9 @@ use std::path::PathBuf;
 
 use gpui::{AppContext, Focusable};
 
-use git;
+use crate::config::SavedSession;
 use git::conventional::is_conventional_commit;
 use ui::prelude::*;
-use crate::config::SavedSession;
 use ui::text_input::{TextInput, TextInputEvent};
 
 use crate::helpers::pick_initial_session;
@@ -23,11 +22,7 @@ impl WorkspaceView {
     }
 
     /// Cmd+N: create a new session in the currently selected project.
-    pub(crate) fn on_new_session(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(repo_root) = self.state.selected_repo.clone() else {
             return;
         };
@@ -60,12 +55,7 @@ impl WorkspaceView {
             let repo_root = repo_root.clone();
             move |this, _input, event, window, cx| match event {
                 TextInputEvent::Confirm(message) => {
-                    this.on_create_session_confirm(
-                        repo_root.clone(),
-                        message.clone(),
-                        window,
-                        cx,
-                    );
+                    this.on_create_session_confirm(repo_root.clone(), message.clone(), window, cx);
                 }
                 TextInputEvent::Cancel => {
                     this.creating_session = None;
@@ -73,28 +63,19 @@ impl WorkspaceView {
                 }
             }
         });
-        let blur_sub = cx.on_blur(
-            &input.read(cx).focus_handle(cx),
-            window,
-            {
-                let repo_root = repo_root.clone();
-                move |this, window, cx| {
-                    if let Some(create) = this.creating_session.take() {
-                        let message = create.edit.input.read(cx).text().trim().to_string();
-                        if message.is_empty() {
-                            cx.notify();
-                        } else {
-                            this.on_create_session_confirm(
-                                repo_root.clone(),
-                                message,
-                                window,
-                                cx,
-                            );
-                        }
+        let blur_sub = cx.on_blur(&input.read(cx).focus_handle(cx), window, {
+            let repo_root = repo_root.clone();
+            move |this, window, cx| {
+                if let Some(create) = this.creating_session.take() {
+                    let message = create.edit.input.read(cx).text().trim().to_string();
+                    if message.is_empty() {
+                        cx.notify();
+                    } else {
+                        this.on_create_session_confirm(repo_root.clone(), message, window, cx);
                     }
                 }
-            },
-        );
+            }
+        });
         self.creating_session = Some(SessionCreate {
             edit: InlineEdit {
                 repo_root,
@@ -123,9 +104,8 @@ impl WorkspaceView {
 
         if self.enforces_conventional_commits(&repo_root) && !is_conventional_commit(&message) {
             if let Some(create) = &mut self.creating_session {
-                create.validation_error = Some(
-                    "Must follow Conventional Commits: type[(scope)]: description".into(),
-                );
+                create.validation_error =
+                    Some("Must follow Conventional Commits: type[(scope)]: description".into());
             }
             cx.notify();
             return;
@@ -160,10 +140,9 @@ impl WorkspaceView {
                     .projects
                     .iter_mut()
                     .find(|p| p.repo_root == repo_root)
+                    && let Some(session) = project.sessions.iter_mut().find(|s| s.id == new_id)
                 {
-                    if let Some(session) = project.sessions.iter_mut().find(|s| s.id == new_id) {
-                        session.worktree_path = Some(wt_path);
-                    }
+                    session.worktree_path = Some(wt_path);
                 }
             }
             Err(error) => {
@@ -273,7 +252,12 @@ impl WorkspaceView {
             move |this, _window, cx| {
                 if let Some(rename) = this.renaming_session.take() {
                     let new_name = rename.edit.input.read(cx).text().trim().to_string();
-                    this.on_rename_session_commit(rename.edit.repo_root, rename.session_id, new_name, cx);
+                    this.on_rename_session_commit(
+                        rename.edit.repo_root,
+                        rename.session_id,
+                        new_name,
+                        cx,
+                    );
                 }
             },
         );
@@ -316,20 +300,15 @@ impl WorkspaceView {
             .projects
             .iter_mut()
             .find(|p| p.repo_root == repo_root)
+            && let Some(session) = project.sessions.iter_mut().find(|s| s.id == session_id)
         {
-            if let Some(session) = project.sessions.iter_mut().find(|s| s.id == session_id) {
-                session.name = new_name;
-            }
+            session.name = new_name;
         }
         self.persist_config();
         cx.notify();
     }
 
-    pub(crate) fn on_close_session(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn on_close_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };
@@ -348,7 +327,13 @@ impl WorkspaceView {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
         };
-        let Some(project) = self.state.config.projects.iter().find(|p| p.repo_root == repo) else {
+        let Some(project) = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo)
+        else {
             return;
         };
         if let Some(session) = project.sessions.get(index) {
@@ -368,13 +353,11 @@ impl WorkspaceView {
         if let (Some(old_repo), Some(old_session)) = (
             self.state.selected_repo.clone(),
             self.state.selected_session.clone(),
-        ) {
-            if let Some(runtime) = self.state.runtimes.get_mut(&old_repo) {
-                if let Some(session_rt) = runtime.session_runtimes.get_mut(&old_session) {
-                    session_rt.cached_branch_status = Some(runtime.branch_status.clone());
-                    session_rt.cached_repo_capabilities = Some(runtime.repo_capabilities.clone());
-                }
-            }
+        ) && let Some(runtime) = self.state.runtimes.get_mut(&old_repo)
+            && let Some(session_rt) = runtime.session_runtimes.get_mut(&old_session)
+        {
+            session_rt.cached_branch_status = Some(runtime.branch_status.clone());
+            session_rt.cached_repo_capabilities = Some(runtime.repo_capabilities.clone());
         }
 
         self.state.selected_repo = Some(repo_root.clone());
@@ -382,14 +365,14 @@ impl WorkspaceView {
         self.ensure_session_runtime(&repo_root, &session_id, window, cx);
 
         // Restore cached branch status / repo capabilities from incoming session
-        if let Some(runtime) = self.state.runtimes.get_mut(&repo_root) {
-            if let Some(session_rt) = runtime.session_runtimes.get(&session_id) {
-                if let Some(cached) = &session_rt.cached_branch_status {
-                    runtime.branch_status = cached.clone();
-                }
-                if let Some(cached) = &session_rt.cached_repo_capabilities {
-                    runtime.repo_capabilities = cached.clone();
-                }
+        if let Some(runtime) = self.state.runtimes.get_mut(&repo_root)
+            && let Some(session_rt) = runtime.session_runtimes.get(&session_id)
+        {
+            if let Some(cached) = &session_rt.cached_branch_status {
+                runtime.branch_status = cached.clone();
+            }
+            if let Some(cached) = &session_rt.cached_repo_capabilities {
+                runtime.repo_capabilities = cached.clone();
             }
         }
 

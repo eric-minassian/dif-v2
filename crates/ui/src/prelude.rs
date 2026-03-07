@@ -1,5 +1,5 @@
 pub use gpui::prelude::*;
-pub use gpui::{div, px, AnyElement, Context, MouseButton, SharedString, Window};
+pub use gpui::{AnyElement, Context, MouseButton, SharedString, Window, div, px};
 
 pub use crate::icon::{DiffStat, Icon, IconButton, IconName};
 pub use crate::theme::{Color, theme};

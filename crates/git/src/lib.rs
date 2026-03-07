@@ -22,12 +22,7 @@ use std::sync::OnceLock;
 /// Homebrew (e.g. `/opt/homebrew/bin/gh`) aren't found by a bare
 /// `Command::new("gh")`. This checks common locations.
 fn resolve_bin(name: &str) -> PathBuf {
-    static EXTRA_PATHS: &[&str] = &[
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-    ];
+    static EXTRA_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
 
     for dir in EXTRA_PATHS {
         let p = Path::new(dir).join(name);
@@ -115,10 +110,13 @@ pub(crate) fn try_run_gh(dir: &Path, args: &[&str]) -> Option<String> {
 
 /// Detect the default branch from the remote (e.g. `origin/main`).
 pub(crate) fn default_branch(dir: &Path) -> String {
-    run_git(dir, &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "origin/main".to_string())
+    run_git(
+        dir,
+        &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+    )
+    .ok()
+    .filter(|s| !s.is_empty())
+    .unwrap_or_else(|| "origin/main".to_string())
 }
 
 pub use commands::{

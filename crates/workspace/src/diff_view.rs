@@ -1,12 +1,8 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use gpui::{
-    FontStyle, FontWeight, HighlightStyle,
-    StyledText, uniform_list,
-};
+use gpui::{FontStyle, FontWeight, HighlightStyle, StyledText, uniform_list};
 
-use git;
 use git::diff::build_display_rows;
 use git::{DiffData, DiffDisplayRow, SplitLine, SplitLineKind, SyntaxRun};
 use ui::prelude::*;
@@ -108,17 +104,9 @@ impl WorkspaceView {
                         h_flex()
                             .text_sm()
                             .when_some(dir_part, |el, dir| {
-                                el.child(
-                                    div()
-                                        .text_color(t.text_dim)
-                                        .child(dir),
-                                )
+                                el.child(div().text_color(t.text_dim).child(dir))
                             })
-                            .child(
-                                div()
-                                    .text_color(t.text_primary)
-                                    .child(file_part),
-                            ),
+                            .child(div().text_color(t.text_primary).child(file_part)),
                     )
                     .child(
                         DiffStat::new()
@@ -152,38 +140,24 @@ impl WorkspaceView {
         let row_count = display_rows.len();
         let entity = cx.entity().clone();
 
-        let diff_list = uniform_list(
-            "diff-lines",
-            row_count,
-            move |range, _window, _cx| {
-                range
-                    .map(|ix| {
-                        let row = &display_rows[ix];
-                        match row {
-                            DiffDisplayRow::Line(line_idx) => {
-                                render_split_line(&lines[*line_idx])
-                            }
-                            DiffDisplayRow::Collapsed {
-                                hidden_count,
-                                start_index,
-                            } => render_collapsed_separator(
-                                *hidden_count,
-                                *start_index,
-                                &entity,
-                            ),
-                            DiffDisplayRow::ExpandedHeader {
-                                hidden_count,
-                                start_index,
-                            } => render_expanded_header(
-                                *hidden_count,
-                                *start_index,
-                                &entity,
-                            ),
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            },
-        )
+        let diff_list = uniform_list("diff-lines", row_count, move |range, _window, _cx| {
+            range
+                .map(|ix| {
+                    let row = &display_rows[ix];
+                    match row {
+                        DiffDisplayRow::Line(line_idx) => render_split_line(&lines[*line_idx]),
+                        DiffDisplayRow::Collapsed {
+                            hidden_count,
+                            start_index,
+                        } => render_collapsed_separator(*hidden_count, *start_index, &entity),
+                        DiffDisplayRow::ExpandedHeader {
+                            hidden_count,
+                            start_index,
+                        } => render_expanded_header(*hidden_count, *start_index, &entity),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
         .flex_1()
         .min_h_0()
         .bg(t.bg_base);
@@ -284,11 +258,7 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
                         .border_r_1()
                         .border_color(t.border_subtle)
                         .text_color(t.text_line_number)
-                        .child(
-                            line.old_lineno
-                                .map(|n| n.to_string())
-                                .unwrap_or_default(),
-                        ),
+                        .child(line.old_lineno.map(|n| n.to_string()).unwrap_or_default()),
                 )
                 .child(
                     div()
@@ -320,11 +290,7 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
                         .border_r_1()
                         .border_color(t.border_subtle)
                         .text_color(t.text_line_number)
-                        .child(
-                            line.new_lineno
-                                .map(|n| n.to_string())
-                                .unwrap_or_default(),
-                        ),
+                        .child(line.new_lineno.map(|n| n.to_string()).unwrap_or_default()),
                 )
                 .child(
                     div()

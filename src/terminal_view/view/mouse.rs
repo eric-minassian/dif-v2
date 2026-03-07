@@ -1,6 +1,8 @@
+use std::time::Instant;
+
 use gpui::{
-    ClipboardItem, Context, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ScrollWheelEvent, TouchPhase, Window,
+    Context, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollWheelEvent,
+    TouchPhase, Window,
 };
 
 use super::drawing::cell_metrics;
@@ -11,6 +13,9 @@ use super::helpers::{
 use super::url::url_at_column_in_line;
 use super::ByteSelection;
 use super::TerminalView;
+
+const DOUBLE_CLICK_INTERVAL_MS: u128 = 400;
+const DOUBLE_CLICK_DISTANCE_PX: f32 = 5.0;
 
 impl TerminalView {
     pub(crate) fn on_mouse_down(
@@ -25,23 +30,18 @@ impl TerminalView {
             return;
         }
 
+        // Cmd+click: open URLs in browser (not just copy)
         if event.button == MouseButton::Left && event.modifiers.platform {
             if let Some((col, row)) = self.mouse_position_to_cell(event.position, window) {
                 if let Some(link) = self.session.hyperlink_at(col, row) {
-                    let item = ClipboardItem::new_string(link);
-                    cx.write_to_clipboard(item.clone());
-                    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                    cx.write_to_primary(item);
+                    cx.open_url(&link);
                     return;
                 }
 
                 if let Some(line) = self.viewport_lines.get(row.saturating_sub(1) as usize)
                     && let Some(url) = url_at_column_in_line(line, col)
                 {
-                    let item = ClipboardItem::new_string(url);
-                    cx.write_to_clipboard(item.clone());
-                    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                    cx.write_to_primary(item);
+                    cx.open_url(&url);
                     return;
                 }
             }
@@ -49,30 +49,50 @@ impl TerminalView {
             if let Some(index) = self.mouse_position_to_viewport_index(event.position, window)
                 && let Some(url) = self.url_at_viewport_index(index)
             {
-                let item = ClipboardItem::new_string(url);
-                cx.write_to_clipboard(item.clone());
-                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                cx.write_to_primary(item);
+                cx.open_url(&url);
                 return;
             }
         }
 
+        // Selection mode (shift held, no input, or no mouse reporting)
         if event.modifiers.shift
             || self.input.is_none()
             || !self.session.mouse_reporting_enabled()
         {
-            if event.button == MouseButton::Left
-                && let Some(index) = self.mouse_position_to_viewport_index(event.position, window)
-            {
-                self.selection = Some(ByteSelection {
-                    anchor: index,
-                    active: index,
-                });
-                cx.notify();
+            if event.button == MouseButton::Left {
+                let click_count = self.click_count_for_event(event);
+
+                if let Some(index) =
+                    self.mouse_position_to_viewport_index(event.position, window)
+                {
+                    match click_count {
+                        2 => {
+                            // Double-click: select word
+                            if let Some(sel) = self.select_word_at_index(index) {
+                                self.selection = Some(sel);
+                            }
+                        }
+                        3 => {
+                            // Triple-click: select line
+                            if let Some(sel) = self.select_line_at_index(index) {
+                                self.selection = Some(sel);
+                            }
+                        }
+                        _ => {
+                            // Single click: start new selection
+                            self.selection = Some(ByteSelection {
+                                anchor: index,
+                                active: index,
+                            });
+                        }
+                    }
+                    cx.notify();
+                }
             }
             return;
         }
 
+        // Forward mouse events to the terminal application
         let Some((col, row)) = self.mouse_position_to_cell(event.position, window) else {
             return;
         };
@@ -235,6 +255,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Accumulate sub-pixel scroll for smooth scrolling (like Zed)
         let line_height = self
             .last_cell_metrics
             .map(|(_, h)| h)
@@ -259,6 +280,7 @@ impl TerminalView {
             TouchPhase::Ended => return,
         };
 
+        // Mouse reporting mode: forward scroll events to the application
         if let Some(input) = self.input.as_ref()
             && !event.modifiers.shift
             && self.session.mouse_reporting_enabled()
@@ -288,10 +310,106 @@ impl TerminalView {
             return;
         }
 
+        // Alt screen + alternate scroll mode: convert scroll to arrow keys
+        // This is what makes scrolling work in vim, less, man, etc.
+        if self.session.alt_screen_active() {
+            if let Some(input) = self.input.as_ref() {
+                let key = if delta_lines > 0 {
+                    b"\x1b[B" // Down arrow
+                } else {
+                    b"\x1b[A" // Up arrow
+                };
+                let steps = delta_lines.unsigned_abs().min(10);
+                for _ in 0..steps {
+                    input.send(key);
+                }
+                return;
+            }
+        }
+
+        // Normal mode: scroll the viewport buffer
         let _ = self.session.scroll_viewport(delta_lines);
         self.sync_viewport_scroll_tracking();
         self.apply_side_effects(cx);
         self.schedule_viewport_refresh(cx);
+    }
+
+    fn click_count_for_event(&mut self, event: &MouseDownEvent) -> u8 {
+        let now = Instant::now();
+        if let Some((last_time, last_pos, last_count)) = self.last_mouse_click {
+            let elapsed = now.duration_since(last_time).as_millis();
+            let dx = f32::from(event.position.x - last_pos.x).abs();
+            let dy = f32::from(event.position.y - last_pos.y).abs();
+            if elapsed < DOUBLE_CLICK_INTERVAL_MS
+                && dx < DOUBLE_CLICK_DISTANCE_PX
+                && dy < DOUBLE_CLICK_DISTANCE_PX
+            {
+                let count = if last_count >= 3 { 1 } else { last_count + 1 };
+                self.last_mouse_click = Some((now, event.position, count));
+                return count;
+            }
+        }
+        self.last_mouse_click = Some((now, event.position, 1));
+        1
+    }
+
+    pub(crate) fn select_word_at_index(&mut self, index: usize) -> Option<ByteSelection> {
+        let (_row, line, line_offset) = self.viewport_row_for_index(index)?;
+        let local = index.saturating_sub(line_offset);
+        let bytes = line.as_bytes();
+
+        if local >= bytes.len() {
+            return None;
+        }
+
+        let is_word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.';
+        let target_is_word = is_word_char(bytes[local]);
+
+        let mut start = local;
+        let mut end = local;
+
+        if target_is_word {
+            while start > 0 && is_word_char(bytes[start - 1]) {
+                start -= 1;
+            }
+            while end < bytes.len() && is_word_char(bytes[end]) {
+                end += 1;
+            }
+        } else if bytes[local] == b' ' {
+            while start > 0 && bytes[start - 1] == b' ' {
+                start -= 1;
+            }
+            while end < bytes.len() && bytes[end] == b' ' {
+                end += 1;
+            }
+        } else {
+            end += 1;
+        }
+
+        Some(ByteSelection {
+            anchor: line_offset + start,
+            active: line_offset + end,
+        })
+    }
+
+    pub(crate) fn select_line_at_index(&mut self, index: usize) -> Option<ByteSelection> {
+        let (_row, line, line_offset) = self.viewport_row_for_index(index)?;
+        Some(ByteSelection {
+            anchor: line_offset,
+            active: line_offset + line.len(),
+        })
+    }
+
+    pub(crate) fn viewport_row_for_index(&self, index: usize) -> Option<(usize, &str, usize)> {
+        let row = self
+            .viewport_line_offsets
+            .iter()
+            .enumerate()
+            .rfind(|(_, offset)| **offset <= index)
+            .map(|(i, _)| i)?;
+        let line = self.viewport_lines.get(row)?.as_str();
+        let offset = *self.viewport_line_offsets.get(row).unwrap_or(&0);
+        Some((row, line, offset))
     }
 
     pub(crate) fn mouse_position_to_viewport_index(

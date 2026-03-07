@@ -19,6 +19,15 @@ impl TerminalView {
             return;
         };
 
+        // Strip escape characters from pasted text for security (like Zed).
+        // Without bracketed paste, a malicious clipboard could inject terminal
+        // escape sequences that execute arbitrary commands.
+        let text = if self.session.bracketed_paste_enabled() {
+            text
+        } else {
+            text.replace('\x1b', "")
+        };
+
         if self.session.bracketed_paste_enabled() {
             self.send_input_parts(&[b"\x1b[200~", text.as_bytes(), b"\x1b[201~"], cx);
         } else {

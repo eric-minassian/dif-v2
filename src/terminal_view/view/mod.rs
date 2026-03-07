@@ -12,8 +12,8 @@ mod tests;
 
 use super::{StyleRun, TerminalSession};
 use gpui::{
-    App, Bounds, Context, FocusHandle, Focusable, IntoElement, KeyBinding, MouseButton, Pixels,
-    Render, SharedString, Window, actions, div, prelude::*, relative,
+    App, Bounds, Context, FocusHandle, Focusable, IntoElement, KeyBinding, KeyContext, MouseButton,
+    Pixels, Render, SharedString, Window, actions, div, prelude::*, relative,
 };
 use std::ops::Range;
 use std::sync::Once;
@@ -23,7 +23,21 @@ use element::TerminalTextElement;
 
 actions!(
     terminal_view,
-    [Copy, Paste, SelectAll, Tab, TabPrev, EscapeKey]
+    [
+        Copy,
+        Paste,
+        SelectAll,
+        Tab,
+        TabPrev,
+        EscapeKey,
+        Clear,
+        ScrollLineUp,
+        ScrollLineDown,
+        ScrollPageUp,
+        ScrollPageDown,
+        ScrollToTop,
+        ScrollToBottom,
+    ]
 );
 
 const KEY_CONTEXT: &str = "Terminal";
@@ -81,6 +95,7 @@ pub struct TerminalView {
     pub(crate) font: gpui::Font,
     pub(crate) was_focused: bool,
     pub(crate) scroll_px: f32,
+    pub(crate) last_mouse_click: Option<(std::time::Instant, gpui::Point<Pixels>, u8)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -127,6 +142,7 @@ impl TerminalView {
             font: super::default_terminal_font(),
             was_focused: false,
             scroll_px: 0.0,
+            last_mouse_click: None,
         }
         .with_refreshed_viewport()
     }
@@ -139,6 +155,133 @@ impl TerminalView {
     fn with_refreshed_viewport(mut self) -> Self {
         self.refresh_viewport();
         self
+    }
+
+    fn dispatch_context(&self) -> KeyContext {
+        let mut context = KeyContext::new_with_defaults();
+        context.add(KEY_CONTEXT);
+
+        if self.session.alt_screen_active() {
+            context.set("screen", "alt");
+        } else {
+            context.set("screen", "normal");
+        }
+
+        if self.session.mouse_reporting_enabled() {
+            context.add("any_mouse_reporting");
+        }
+
+        if self.session.bracketed_paste_enabled() {
+            context.add("bracketed_paste");
+        }
+
+        if self.session.focus_events_enabled() {
+            context.add("report_focus");
+        }
+
+        if self.session.alternate_scroll_enabled() {
+            context.add("alternate_scroll");
+        }
+
+        if self.selection.is_some() {
+            context.add("selection");
+        }
+
+        context
+    }
+
+    fn scroll_by_lines(&mut self, delta: i32, cx: &mut Context<Self>) {
+        let _ = self.session.scroll_viewport(delta);
+        self.sync_viewport_scroll_tracking();
+        self.apply_side_effects(cx);
+        self.schedule_viewport_refresh(cx);
+    }
+
+    fn scroll_to_bottom_if_needed(&mut self, cx: &mut Context<Self>) {
+        if self.session.display_offset() > 0 {
+            let _ = self.session.scroll_viewport_bottom();
+            self.sync_viewport_scroll_tracking();
+            self.apply_side_effects(cx);
+            self.schedule_viewport_refresh(cx);
+        }
+    }
+
+    pub(crate) fn on_clear(
+        &mut self,
+        _: &Clear,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(input) = self.input.as_ref() {
+            // Send form feed (clear) and then redraw prompt
+            input.send(b"\x0c");
+        }
+        self.scroll_px = 0.0;
+        let _ = self.session.scroll_viewport_bottom();
+        self.sync_viewport_scroll_tracking();
+        self.schedule_viewport_refresh(cx);
+    }
+
+    pub(crate) fn on_scroll_line_up(
+        &mut self,
+        _: &ScrollLineUp,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.scroll_by_lines(-1, cx);
+    }
+
+    pub(crate) fn on_scroll_line_down(
+        &mut self,
+        _: &ScrollLineDown,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.scroll_by_lines(1, cx);
+    }
+
+    pub(crate) fn on_scroll_page_up(
+        &mut self,
+        _: &ScrollPageUp,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let step = (self.session.rows() as i32 / 2).max(1);
+        self.scroll_by_lines(-step, cx);
+    }
+
+    pub(crate) fn on_scroll_page_down(
+        &mut self,
+        _: &ScrollPageDown,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let step = (self.session.rows() as i32 / 2).max(1);
+        self.scroll_by_lines(step, cx);
+    }
+
+    pub(crate) fn on_scroll_to_top(
+        &mut self,
+        _: &ScrollToTop,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let _ = self.session.scroll_viewport_top();
+        self.sync_viewport_scroll_tracking();
+        self.apply_side_effects(cx);
+        self.schedule_viewport_refresh(cx);
+    }
+
+    pub(crate) fn on_scroll_to_bottom(
+        &mut self,
+        _: &ScrollToBottom,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let _ = self.session.scroll_viewport_bottom();
+        self.sync_viewport_scroll_tracking();
+        self.apply_side_effects(cx);
+        self.schedule_viewport_refresh(cx);
     }
 }
 
@@ -190,17 +333,26 @@ impl Render for TerminalView {
             }
         }
 
+        let key_context = self.dispatch_context();
+
         div()
             .size_full()
             .flex()
             .track_focus(&self.focus_handle)
-            .key_context(KEY_CONTEXT)
+            .key_context(key_context)
             .on_action(cx.listener(Self::on_copy))
             .on_action(cx.listener(Self::on_select_all))
             .on_action(cx.listener(Self::on_paste))
             .on_action(cx.listener(Self::on_tab))
             .on_action(cx.listener(Self::on_tab_prev))
             .on_action(cx.listener(Self::on_escape))
+            .on_action(cx.listener(Self::on_clear))
+            .on_action(cx.listener(Self::on_scroll_line_up))
+            .on_action(cx.listener(Self::on_scroll_line_down))
+            .on_action(cx.listener(Self::on_scroll_page_up))
+            .on_action(cx.listener(Self::on_scroll_page_down))
+            .on_action(cx.listener(Self::on_scroll_to_top))
+            .on_action(cx.listener(Self::on_scroll_to_bottom))
             .on_key_down(cx.listener(Self::on_key_down))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .on_mouse_move(cx.listener(Self::on_mouse_move))

@@ -142,6 +142,9 @@ impl TerminalView {
             return;
         }
 
+        // Auto-scroll to bottom when sending input (like Zed)
+        self.scroll_to_bottom_if_needed(cx);
+
         if let Some(input) = self.input.as_ref() {
             for bytes in parts {
                 input.send(bytes);
@@ -171,6 +174,9 @@ impl TerminalView {
         if keystroke.modifiers.platform || keystroke.modifiers.function {
             return;
         }
+
+        // Auto-scroll to bottom on any keypress (like Zed)
+        self.scroll_to_bottom_if_needed(cx);
 
         let scroll_step = (self.session.rows() as i32 / 2).max(1);
 

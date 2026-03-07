@@ -327,10 +327,11 @@ impl TerminalSession {
         let term = self.term.lock();
         let rows = term.screen_lines();
         let cols = term.columns();
+        let display_offset = term.grid().display_offset() as i32;
         let mut output = String::new();
 
         for row_idx in 0..rows {
-            let line = Line(row_idx as i32);
+            let line = Line(row_idx as i32 - display_offset);
             let mut row_str = String::new();
 
             for col_idx in 0..cols {
@@ -359,7 +360,8 @@ impl TerminalSession {
     pub fn dump_viewport_row(&self, row: u16) -> Result<String, anyhow::Error> {
         let term = self.term.lock();
         let cols = term.columns();
-        let line = Line(row as i32);
+        let display_offset = term.grid().display_offset() as i32;
+        let line = Line(row as i32 - display_offset);
         let mut row_str = String::new();
 
         for col_idx in 0..cols {
@@ -386,7 +388,8 @@ impl TerminalSession {
     ) -> Result<Vec<StyleRun>, anyhow::Error> {
         let term = self.term.lock();
         let cols = term.columns();
-        let line = Line(row as i32);
+        let display_offset = term.grid().display_offset() as i32;
+        let line = Line(row as i32 - display_offset);
 
         let mut runs = Vec::new();
         let mut current_run: Option<(Rgb, Rgb, u8, u16)> = None; // (fg, bg, flags, start_col)
@@ -467,6 +470,10 @@ impl TerminalSession {
 
     pub fn cursor_position(&self) -> Option<(u16, u16)> {
         let term = self.term.lock();
+        // Hide cursor when scrolled into history
+        if term.grid().display_offset() != 0 {
+            return None;
+        }
         let cursor = term.grid().cursor.point;
         // Convert to 1-based
         Some((

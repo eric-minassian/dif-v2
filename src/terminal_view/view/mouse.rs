@@ -1,6 +1,6 @@
 use gpui::{
     ClipboardItem, Context, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ScrollDelta, ScrollWheelEvent, Window,
+    ScrollWheelEvent, TouchPhase, Window,
 };
 
 use super::drawing::cell_metrics;
@@ -235,15 +235,29 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let dy_lines: f32 = match event.delta {
-            ScrollDelta::Lines(p) => p.y,
-            ScrollDelta::Pixels(p) => f32::from(p.y) / 16.0,
-        };
+        let line_height = self
+            .last_cell_metrics
+            .map(|(_, h)| h)
+            .unwrap_or(16.0);
 
-        let delta_lines = (-dy_lines).round() as i32;
-        if delta_lines == 0 {
-            return;
-        }
+        let delta_lines = match event.touch_phase {
+            TouchPhase::Started => {
+                self.scroll_px = 0.0;
+                return;
+            }
+            TouchPhase::Moved => {
+                let old_offset = (self.scroll_px / line_height) as i32;
+                let pixel_delta_y = f32::from(event.delta.pixel_delta(gpui::px(line_height)).y);
+                self.scroll_px += pixel_delta_y;
+                let new_offset = (self.scroll_px / line_height) as i32;
+                let delta = new_offset - old_offset;
+                if delta == 0 {
+                    return;
+                }
+                delta
+            }
+            TouchPhase::Ended => return,
+        };
 
         if let Some(input) = self.input.as_ref()
             && !event.modifiers.shift

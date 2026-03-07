@@ -80,6 +80,7 @@ pub struct TerminalView {
     pub(crate) marked_selected_range_utf16: Range<usize>,
     pub(crate) font: gpui::Font,
     pub(crate) was_focused: bool,
+    pub(crate) scroll_px: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -125,6 +126,7 @@ impl TerminalView {
             marked_selected_range_utf16: 0..0,
             font: super::default_terminal_font(),
             was_focused: false,
+            scroll_px: 0.0,
         }
         .with_refreshed_viewport()
     }

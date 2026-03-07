@@ -1,10 +1,9 @@
 use gpui::{App, AppContext, Application, KeyBinding, TitlebarOptions, WindowOptions, point, px};
 
 use crate::assets::Assets;
-use crate::storage;
-use crate::terminal_view::view::{Copy, Paste, SelectAll};
-use crate::text_input;
-use crate::workspace::{
+use terminal::view::{Copy, Paste, SelectAll};
+use ui::text_input;
+use workspace::{
     CloseDiffView, CloseSideTab, FocusTerminal, HideApp, HideOtherApps, MinimizeWindow,
     NewSession, NewSideTab, OpenSettings, Quit, RefreshGitStatus, RunGitAction, SelectSession1,
     SelectSession2, SelectSession3, SelectSession4, SelectSession5, SelectSession6, SelectSession7,
@@ -51,7 +50,7 @@ pub fn run() {
         cx.on_action(|_: &HideApp, cx| cx.hide());
         cx.on_action(|_: &HideOtherApps, cx| cx.hide_other_apps());
 
-        let config = storage::load_config().unwrap_or_default();
+        let config = workspace::storage::load_config().unwrap_or_default();
 
         let window_options = WindowOptions {
             titlebar: Some(TitlebarOptions {

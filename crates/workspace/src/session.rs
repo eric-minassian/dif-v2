@@ -211,6 +211,10 @@ impl WorkspaceView {
                 // Clear stale git data
                 if let Some(runtime) = self.state.runtimes.get_mut(&repo_root) {
                     runtime.git_snapshot = Default::default();
+                    runtime.branch_status = Default::default();
+                    runtime.repo_capabilities = Default::default();
+                    runtime.action_phase = Default::default();
+                    runtime.staged_files.clear();
                 }
             }
         }

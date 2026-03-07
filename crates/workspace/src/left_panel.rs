@@ -1,6 +1,7 @@
 use gpui::ClickEvent;
 
 use crate::config::SavedProject;
+use git::BranchStatus;
 use ui::prelude::*;
 use ui::{PanelSide, button, panel, section_header};
 
@@ -242,6 +243,9 @@ impl WorkspaceView {
         };
 
         let show_badge = show_session_shortcuts && is_project_selected && session_index < 9;
+        let pr_icon = self
+            .session_branch_status(project, &session.id)
+            .and_then(|status| self.render_session_pr_icon(status));
 
         h_flex()
             .id(session_row_id)
@@ -269,6 +273,7 @@ impl WorkspaceView {
                         .child(format!("{}", session_index + 1)),
                 )
             })
+            .when_some(pr_icon, |el, icon| el.child(icon))
             .child(name_content)
             .child(
                 IconButton::new("delete-session-btn", IconName::X)
@@ -368,5 +373,46 @@ impl WorkspaceView {
 
     pub(crate) fn render_collapsed_left_sidebar(&self) -> AnyElement {
         div().into_any_element()
+    }
+
+    fn session_branch_status<'a>(
+        &'a self,
+        project: &'a SavedProject,
+        session_id: &str,
+    ) -> Option<&'a BranchStatus> {
+        let runtime = self.state.runtimes.get(&project.repo_root)?;
+        if self.state.selected_repo.as_ref() == Some(&project.repo_root)
+            && self.state.selected_session.as_deref() == Some(session_id)
+        {
+            Some(&runtime.branch_status)
+        } else {
+            runtime
+                .session_runtimes
+                .get(session_id)?
+                .cached_branch_status
+                .as_ref()
+        }
+    }
+
+    fn render_session_pr_icon(&self, branch_status: &BranchStatus) -> Option<AnyElement> {
+        let t = theme();
+        let color = match branch_status.pr_state.as_deref() {
+            Some("OPEN") => t.accent_green,
+            Some("CLOSED") => t.accent_red,
+            Some("MERGED") => t.accent_purple,
+            _ => return None,
+        };
+        let url = branch_status.pr_url.clone()?;
+
+        Some(
+            IconButton::new("session-pr-link", IconName::GitPullRequest)
+                .icon_size(px(14.))
+                .icon_color(color)
+                .hover_color(color)
+                .on_click(move |_event, _window, _cx| {
+                    let _ = std::process::Command::new("open").arg(&url).spawn();
+                })
+                .into_any_element(),
+        )
     }
 }

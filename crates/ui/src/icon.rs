@@ -9,6 +9,7 @@ pub enum IconName {
     ChevronRight,
     CircleDot,
     ExternalLink,
+    GitPullRequest,
     HelpCircle,
     Minus,
     PanelLeft,
@@ -26,6 +27,7 @@ impl IconName {
             Self::ChevronRight => "icons/chevron_right.svg",
             Self::CircleDot => "icons/circle_dot.svg",
             Self::ExternalLink => "icons/external_link.svg",
+            Self::GitPullRequest => "icons/git_pull_request.svg",
             Self::HelpCircle => "icons/help_circle.svg",
             Self::Minus => "icons/minus.svg",
             Self::PanelLeft => "icons/panel_left.svg",
@@ -111,6 +113,11 @@ impl IconButton {
 
     pub fn icon_size(mut self, size: Pixels) -> Self {
         self.icon_size = size;
+        self
+    }
+
+    pub fn icon_color(mut self, color: impl Into<Color>) -> Self {
+        self.icon_color = color.into();
         self
     }
 

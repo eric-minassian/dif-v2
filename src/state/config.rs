@@ -60,7 +60,6 @@ impl SavedProject {
             .unwrap_or(0);
         (max_id + 1).to_string()
     }
-
 }
 
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]

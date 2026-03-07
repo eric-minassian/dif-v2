@@ -115,21 +115,14 @@ impl WorkspaceView {
             return;
         }
 
-        // Validate conventional commit format if enforced — keep input open on failure
-        if let Some(project) = self
-            .state
-            .config
-            .projects
-            .iter()
-            .find(|p| p.repo_root == repo_root)
-        {
-            if project.settings.enforce_conventional_commits && !is_conventional_commit(&message) {
-                if let Some((_, _, _, _, ref mut error)) = self.creating_session {
-                    *error = Some("Must follow Conventional Commits: type[(scope)]: description".into());
-                }
-                cx.notify();
-                return;
+        if self.enforces_conventional_commits(&repo_root) && !is_conventional_commit(&message) {
+            if let Some((_, _, _, _, ref mut error)) = self.creating_session {
+                *error = Some(
+                    "Must follow Conventional Commits: type[(scope)]: description".into(),
+                );
             }
+            cx.notify();
+            return;
         }
 
         self.creating_session = None;
@@ -297,22 +290,12 @@ impl WorkspaceView {
             return;
         }
 
-        // Validate conventional commit format if enforced
-        if let Some(project) = self
-            .state
-            .config
-            .projects
-            .iter()
-            .find(|p| p.repo_root == repo_root)
-        {
-            if project.settings.enforce_conventional_commits && !is_conventional_commit(&new_name) {
-                self.state.flash_error = Some(
-                    "Session name must follow Conventional Commits: type[(scope)]: description"
-                        .into(),
-                );
-                cx.notify();
-                return;
-            }
+        if self.enforces_conventional_commits(&repo_root) && !is_conventional_commit(&new_name) {
+            self.state.flash_error = Some(
+                "Session name must follow Conventional Commits: type[(scope)]: description".into(),
+            );
+            cx.notify();
+            return;
         }
 
         if let Some(project) = self

@@ -25,12 +25,14 @@ Note: `.cargo/config.toml` sets a custom target dir (`/Users/eric/.cargo-targets
 
 ## Completion Checklist
 
-Before considering a change done, run:
+**IMPORTANT: ALWAYS run both of these before considering any change done:**
 
 ```bash
 cargo check
-cargo fmt --all --check
+cargo fmt --all --check  # Fix with: cargo fmt --all
 ```
+
+**Do NOT skip formatting. CI will fail if `cargo fmt` is not clean.**
 
 ## Architecture
 

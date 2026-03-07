@@ -2,6 +2,7 @@
 pub enum ResizingSidebar {
     Left,
     Right,
+    Bottom,
 }
 
 #[derive(Clone, Debug, Default)]

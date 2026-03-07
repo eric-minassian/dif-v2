@@ -4,10 +4,13 @@ use crate::assets::Assets;
 use terminal::view::{Copy, Paste, SelectAll};
 use ui::text_input;
 use workspace::{
-    CloseDiffView, CloseSideTab, FocusTerminal, HideApp, HideOtherApps, MinimizeWindow, NewSession,
-    NewSideTab, OpenSettings, Quit, RefreshGitStatus, RunGitAction, SelectSession1, SelectSession2,
-    SelectSession3, SelectSession4, SelectSession5, SelectSession6, SelectSession7, SelectSession8,
-    SelectSession9, ToggleHelp, ToggleLeftSidebar, ToggleRightSidebar, WorkspaceView,
+    ActivatePaneDown, ActivatePaneLeft, ActivatePaneRight, ActivatePaneUp, CloseDiffView,
+    CloseSideTab, FocusTerminal, HideApp, HideOtherApps, MinimizeWindow, NewSession, NewSideTab,
+    NextTerminalTab, OpenSettings, PrevTerminalTab, Quit, RefreshGitStatus, RunGitAction,
+    SelectSession1, SelectSession2, SelectSession3, SelectSession4, SelectSession5, SelectSession6,
+    SelectSession7, SelectSession8, SelectSession9, SplitTerminalDown, SplitTerminalLeft,
+    SplitTerminalRight, SplitTerminalUp, ToggleBottomPanel, ToggleHelp, ToggleLeftSidebar,
+    ToggleRightSidebar, ToggleZoomTerminalPane, WorkspaceView,
 };
 
 pub fn run() {
@@ -30,6 +33,7 @@ pub fn run() {
                 KeyBinding::new("cmd-r", RefreshGitStatus, None),
                 KeyBinding::new("cmd-,", OpenSettings, None),
                 KeyBinding::new("cmd-n", NewSession, None),
+                KeyBinding::new("cmd-j", ToggleBottomPanel, None),
                 KeyBinding::new("cmd-`", FocusTerminal, None),
                 KeyBinding::new("cmd-/", ToggleHelp, None),
                 KeyBinding::new("cmd-enter", RunGitAction, None),
@@ -45,6 +49,22 @@ pub fn run() {
                 KeyBinding::new("cmd-a", SelectAll, None),
                 KeyBinding::new("cmd-c", Copy, None),
                 KeyBinding::new("cmd-v", Paste, None),
+                // Terminal-context keybindings (only fire when a terminal is focused)
+                KeyBinding::new("cmd-d", SplitTerminalRight, Some("Terminal")),
+                KeyBinding::new("cmd-shift-d", SplitTerminalDown, Some("Terminal")),
+                KeyBinding::new("cmd-shift-]", NextTerminalTab, Some("Terminal")),
+                KeyBinding::new("cmd-shift-[", PrevTerminalTab, Some("Terminal")),
+                KeyBinding::new("cmd-shift-enter", ToggleZoomTerminalPane, Some("Terminal")),
+                // Navigate between split panes (Terminal context)
+                KeyBinding::new("cmd-alt-left", ActivatePaneLeft, Some("Terminal")),
+                KeyBinding::new("cmd-alt-right", ActivatePaneRight, Some("Terminal")),
+                KeyBinding::new("cmd-alt-up", ActivatePaneUp, Some("Terminal")),
+                KeyBinding::new("cmd-alt-down", ActivatePaneDown, Some("Terminal")),
+                // Split in all directions (Terminal context)
+                KeyBinding::new("cmd-ctrl-left", SplitTerminalLeft, Some("Terminal")),
+                KeyBinding::new("cmd-ctrl-right", SplitTerminalRight, Some("Terminal")),
+                KeyBinding::new("cmd-ctrl-up", SplitTerminalUp, Some("Terminal")),
+                KeyBinding::new("cmd-ctrl-down", SplitTerminalDown, Some("Terminal")),
             ]);
 
             // Global action handlers for standard macOS behaviors

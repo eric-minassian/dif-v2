@@ -1,3 +1,4 @@
+mod bottom_panel;
 mod changes_list;
 mod checks_popover;
 pub mod config;
@@ -7,6 +8,7 @@ mod git_poll;
 mod help;
 mod helpers;
 mod left_panel;
+mod pane_group;
 mod panel_action;
 mod picker;
 mod project;
@@ -16,7 +18,6 @@ mod session;
 mod settings;
 mod sidebar;
 pub mod storage;
-mod tab_bar;
 mod titlebar;
 mod ui_state;
 mod update_actions;
@@ -26,7 +27,10 @@ use std::path::{Path, PathBuf};
 
 use gpui::{App, CursorStyle, Entity, FocusHandle, Focusable, MouseButton, Subscription, actions};
 
-use config::{AppConfig, DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH};
+use config::{
+    AppConfig, DEFAULT_BOTTOM_PANEL_HEIGHT, DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH,
+};
+use pane_group::PaneGroup;
 use runtime::{AppState, ProjectRuntime, SessionRuntime, TerminalTab};
 use ui::empty_state;
 use ui::prelude::*;
@@ -35,6 +39,7 @@ use ui_state::ResizingSidebar;
 
 use helpers::{
     pick_initial_selection, pick_initial_session, refresh_project_validity, resize_handle,
+    resize_handle_horizontal,
 };
 
 actions!(
@@ -42,6 +47,8 @@ actions!(
     [
         NewSideTab,
         CloseSideTab,
+        CloseOtherTabs,
+        CloseAllTabs,
         SelectSession1,
         SelectSession2,
         SelectSession3,
@@ -54,10 +61,22 @@ actions!(
         CloseDiffView,
         ToggleLeftSidebar,
         ToggleRightSidebar,
+        ToggleBottomPanel,
         RefreshGitStatus,
         OpenSettings,
         NewSession,
         FocusTerminal,
+        SplitTerminalRight,
+        SplitTerminalLeft,
+        SplitTerminalDown,
+        SplitTerminalUp,
+        ActivatePaneLeft,
+        ActivatePaneRight,
+        ActivatePaneUp,
+        ActivatePaneDown,
+        ToggleZoomTerminalPane,
+        NextTerminalTab,
+        PrevTerminalTab,
         ToggleHelp,
         RunGitAction,
         Quit,
@@ -115,10 +134,15 @@ impl WorkspaceView {
         let right_w = config
             .right_sidebar_width
             .unwrap_or(DEFAULT_RIGHT_SIDEBAR_WIDTH);
+        let bottom_h = config
+            .bottom_panel_height
+            .unwrap_or(DEFAULT_BOTTOM_PANEL_HEIGHT);
         let mut state = AppState {
             config,
             left_sidebar_width: left_w,
             right_sidebar_width: right_w,
+            bottom_panel_height: bottom_h,
+            bottom_panel_collapsed: true,
             ..AppState::default()
         };
         refresh_project_validity(&mut state.config.projects);
@@ -200,29 +224,26 @@ impl WorkspaceView {
             Err(error) => (None, Some(error.to_string())),
         };
 
-        // Create initial side terminal tab
-        let (side_tabs, selected_tab, next_id) =
-            match terminal::spawn_terminal(window, cx, &working_dir) {
-                Ok(view) => {
-                    let tab = TerminalTab {
-                        id: "1".to_string(),
-                        view,
-                    };
-                    (vec![tab], Some("1".to_string()), 2)
-                }
-                Err(error) => {
-                    self.state.flash_error =
-                        Some(format!("Failed to create side terminal: {error}"));
-                    (vec![], None, 1)
-                }
-            };
+        // Create initial bottom panel terminal tab
+        let tabs = match terminal::spawn_terminal(window, cx, &working_dir) {
+            Ok(view) => {
+                vec![TerminalTab {
+                    pane_group: PaneGroup::new(view.clone()),
+                    active_pane: Some(view),
+                    zoomed_pane_group: None,
+                }]
+            }
+            Err(error) => {
+                self.state.flash_error = Some(format!("Failed to create side terminal: {error}"));
+                Vec::new()
+            }
+        };
 
         let session_runtime = SessionRuntime {
             main_terminal,
             main_terminal_error: main_error,
-            side_tabs,
-            selected_side_tab: selected_tab,
-            next_tab_id: next_id,
+            tabs,
+            active_tab_index: 0,
             cached_branch_status: None,
             cached_repo_capabilities: None,
         };
@@ -384,10 +405,10 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         root.on_action(cx.listener(|this, _: &NewSideTab, window, cx| {
-            this.on_add_side_tab(window, cx);
+            this.on_add_terminal(window, cx);
         }))
-        .on_action(cx.listener(|this, _: &CloseSideTab, _window, cx| {
-            this.on_close_active_side_tab(cx);
+        .on_action(cx.listener(|this, _: &CloseSideTab, window, cx| {
+            this.on_close_active_terminal(window, cx);
         }))
         .on_action(cx.listener(|_this, _: &MinimizeWindow, window, _cx| {
             window.minimize_window();
@@ -412,6 +433,9 @@ impl WorkspaceView {
         }))
         .on_action(cx.listener(|this, _: &ToggleRightSidebar, _window, cx| {
             this.on_toggle_right_sidebar(cx);
+        }))
+        .on_action(cx.listener(|this, _: &ToggleBottomPanel, window, cx| {
+            this.on_toggle_bottom_panel(window, cx);
         }))
         .on_action(cx.listener(|this, _: &RefreshGitStatus, window, cx| {
             this.on_refresh_git_status(window, cx);
@@ -452,6 +476,47 @@ impl WorkspaceView {
         .on_action(cx.listener(|this, _: &FocusTerminal, window, cx| {
             this.on_focus_terminal(window, cx);
         }))
+        .on_action(cx.listener(|this, _: &SplitTerminalRight, window, cx| {
+            this.on_split_terminal(window, cx, pane_group::SplitDirection::Right);
+        }))
+        .on_action(cx.listener(|this, _: &SplitTerminalLeft, window, cx| {
+            this.on_split_terminal(window, cx, pane_group::SplitDirection::Left);
+        }))
+        .on_action(cx.listener(|this, _: &SplitTerminalDown, window, cx| {
+            this.on_split_terminal(window, cx, pane_group::SplitDirection::Down);
+        }))
+        .on_action(cx.listener(|this, _: &SplitTerminalUp, window, cx| {
+            this.on_split_terminal(window, cx, pane_group::SplitDirection::Up);
+        }))
+        .on_action(cx.listener(|this, _: &ActivatePaneLeft, window, cx| {
+            this.on_activate_pane_in_direction(window, cx, pane_group::SplitDirection::Left);
+        }))
+        .on_action(cx.listener(|this, _: &ActivatePaneRight, window, cx| {
+            this.on_activate_pane_in_direction(window, cx, pane_group::SplitDirection::Right);
+        }))
+        .on_action(cx.listener(|this, _: &ActivatePaneUp, window, cx| {
+            this.on_activate_pane_in_direction(window, cx, pane_group::SplitDirection::Up);
+        }))
+        .on_action(cx.listener(|this, _: &ActivatePaneDown, window, cx| {
+            this.on_activate_pane_in_direction(window, cx, pane_group::SplitDirection::Down);
+        }))
+        .on_action(
+            cx.listener(|this, _: &ToggleZoomTerminalPane, _window, cx| {
+                this.on_toggle_zoom_terminal_pane(cx);
+            }),
+        )
+        .on_action(cx.listener(|this, _: &NextTerminalTab, window, cx| {
+            this.on_next_terminal_tab(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &PrevTerminalTab, window, cx| {
+            this.on_prev_terminal_tab(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &CloseOtherTabs, _window, cx| {
+            this.on_close_other_tabs(cx);
+        }))
+        .on_action(cx.listener(|this, _: &CloseAllTabs, _window, cx| {
+            this.on_close_all_tabs(cx);
+        }))
         .on_action(cx.listener(|this, _: &RunGitAction, window, cx| {
             this.on_run_git_action(window, cx);
         }))
@@ -465,6 +530,9 @@ impl WorkspaceView {
 impl Render for WorkspaceView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
+        // Track which terminal pane has focus (for split-pane click-to-focus)
+        self.track_focused_terminal_pane(window, cx);
+
         let show_session_shortcuts = window.modifiers().platform;
 
         let left = if self.state.left_sidebar_collapsed {
@@ -479,9 +547,14 @@ impl Render for WorkspaceView {
             self.render_right_sidebar(cx)
         };
 
-        let is_resizing = self.state.resizing_sidebar.is_some();
+        let is_resizing_h = matches!(
+            self.state.resizing_sidebar,
+            Some(ResizingSidebar::Left | ResizingSidebar::Right)
+        );
+        let is_resizing_v = matches!(self.state.resizing_sidebar, Some(ResizingSidebar::Bottom));
         let left_collapsed = self.state.left_sidebar_collapsed;
         let right_collapsed = self.state.right_sidebar_collapsed;
+        let bottom_collapsed = self.state.bottom_panel_collapsed;
 
         // Compute checks popover state (clone to avoid borrow conflicts)
         let popover_branch_status = self
@@ -503,7 +576,8 @@ impl Render for WorkspaceView {
             )
             .on_mouse_move(cx.listener(Self::on_resize_drag))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_resize_end))
-            .when(is_resizing, |el| el.cursor(CursorStyle::ResizeLeftRight))
+            .when(is_resizing_h, |el| el.cursor(CursorStyle::ResizeLeftRight))
+            .when(is_resizing_v, |el| el.cursor(CursorStyle::ResizeUpDown))
             .relative()
             .size_full()
             .flex()
@@ -521,7 +595,17 @@ impl Render for WorkspaceView {
                     .when(!left_collapsed, |el| {
                         el.child(resize_handle("left-resize", cx, ResizingSidebar::Left))
                     })
-                    .child(self.render_center(cx))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .child(self.render_center(cx))
+                            .when(!bottom_collapsed, |el| {
+                                el.child(resize_handle_horizontal("bottom-resize", cx))
+                                    .child(self.render_bottom_panel(cx))
+                            }),
+                    )
                     .when(!right_collapsed, |el| {
                         el.child(resize_handle("right-resize", cx, ResizingSidebar::Right))
                     })

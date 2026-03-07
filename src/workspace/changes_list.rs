@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton};
+use gpui::{SharedString, div, prelude::*, px, AnyElement, Context, MouseButton};
 
 use crate::icons::icon_check;
 use crate::state::GitChange;
@@ -15,15 +15,15 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let t = theme();
-        let file_path = change.path.clone();
+        let path = change.path.clone();
         let status_code = change.status_code.clone();
-        let is_staged = staged_files.contains(&change.path);
+        let is_staged = staged_files.contains(&path);
 
         let is_viewing = self
             .state
             .viewing_diff
             .as_ref()
-            .is_some_and(|d| d.file_path == change.path);
+            .is_some_and(|d| d.file_path == path);
 
         let status_color = match change.status_code.as_str() {
             "A" | "??" => t.accent_green,
@@ -31,10 +31,11 @@ impl WorkspaceView {
             _ => t.text_muted,
         };
 
-        let change_row_id = gpui::ElementId::Name(format!("change-{}", change.path).into());
-        let checkbox_id = gpui::ElementId::Name(format!("chk-{}", change.path).into());
+        let change_row_id = gpui::ElementId::Name(format!("change-{}", path).into());
+        let checkbox_id = gpui::ElementId::Name(format!("chk-{}", path).into());
 
-        let toggle_path = change.path.clone();
+        let toggle_path = path.clone();
+        let file_path = path.clone();
 
         div()
             .id(change_row_id)
@@ -89,16 +90,16 @@ impl WorkspaceView {
                     .text_color(status_color)
                     .w(px(20.))
                     .flex_shrink_0()
-                    .child(change.status_code.clone()),
+                    .child(SharedString::from(change.status_code.clone())),
             )
             // File path (clickable for diff)
             .child({
-                let (dir_part, file_part) = match change.path.rfind('/') {
+                let (dir_part, file_part) = match path.rfind('/') {
                     Some(pos) => (
-                        Some(change.path[..=pos].to_string()),
-                        change.path[pos + 1..].to_string(),
+                        Some(SharedString::from(path[..=pos].to_string())),
+                        SharedString::from(path[pos + 1..].to_string()),
                     ),
-                    None => (None, change.path.clone()),
+                    None => (None, SharedString::from(path)),
                 };
                 div()
                     .flex_1()

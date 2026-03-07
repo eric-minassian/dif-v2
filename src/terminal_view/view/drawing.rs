@@ -1,5 +1,6 @@
 use super::super::Rgb;
 use gpui::{Bounds, PaintQuad, Pixels, SharedString, TextRun, UnderlineStyle, fill, point, px};
+use smallvec::SmallVec;
 
 pub(crate) const CELL_STYLE_FLAG_BOLD: u8 = 0x02;
 pub(crate) const CELL_STYLE_FLAG_ITALIC: u8 = 0x04;
@@ -97,9 +98,9 @@ pub(crate) fn box_drawing_quads_for_char(
     cell_width: f32,
     color: gpui::Hsla,
     ch: char,
-) -> Vec<PaintQuad> {
+) -> SmallVec<[PaintQuad; 2]> {
     let Some((mask, scale)) = box_drawing_mask(ch) else {
-        return Vec::new();
+        return SmallVec::new();
     };
 
     let x0 = bounds.left();
@@ -118,7 +119,7 @@ pub(crate) fn box_drawing_quads_for_char(
     let has_up = mask & BOX_DIR_UP != 0;
     let has_down = mask & BOX_DIR_DOWN != 0;
 
-    let mut quads = Vec::new();
+    let mut quads = SmallVec::new();
 
     if has_left || has_right {
         let (start_x, end_x) = if has_left && has_right {

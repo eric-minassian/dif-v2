@@ -37,17 +37,20 @@ pub(crate) fn highlight_lines(content: &str, file_path: &str) -> Vec<Vec<SyntaxR
     let mut highlight_state =
         syntect::highlighting::HighlightState::new(&highlighter, syntect::parsing::ScopeStack::new());
     let mut result = Vec::new();
+    let mut line_buf = String::new();
 
     for line in content.lines() {
-        let line_with_nl = format!("{line}\n");
+        line_buf.clear();
+        line_buf.push_str(line);
+        line_buf.push('\n');
         let ops = parse_state
-            .parse_line(&line_with_nl, &SYNTAX_SET)
+            .parse_line(&line_buf, &SYNTAX_SET)
             .unwrap_or_default();
         let regions: Vec<(highlighting::Style, &str)> =
             syntect::highlighting::HighlightIterator::new(
                 &mut highlight_state,
                 &ops,
-                &line_with_nl,
+                &line_buf,
                 &highlighter,
             )
             .collect();

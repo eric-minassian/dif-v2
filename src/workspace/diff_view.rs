@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     AnyElement, Context, FontStyle, FontWeight, HighlightStyle, MouseButton, MouseUpEvent,
@@ -69,7 +69,7 @@ impl WorkspaceView {
     fn on_expand_diff_section(&mut self, start_index: usize, cx: &mut Context<Self>) {
         if let Some(diff) = &mut self.state.viewing_diff {
             diff.expanded_sections.insert(start_index);
-            diff.display_rows = build_display_rows(&diff.lines, &diff.expanded_sections);
+            diff.display_rows = Arc::new(build_display_rows(&diff.lines, &diff.expanded_sections));
             cx.notify();
         }
     }
@@ -77,7 +77,7 @@ impl WorkspaceView {
     fn on_collapse_diff_section(&mut self, start_index: usize, cx: &mut Context<Self>) {
         if let Some(diff) = &mut self.state.viewing_diff {
             diff.expanded_sections.remove(&start_index);
-            diff.display_rows = build_display_rows(&diff.lines, &diff.expanded_sections);
+            diff.display_rows = Arc::new(build_display_rows(&diff.lines, &diff.expanded_sections));
             cx.notify();
         }
     }
@@ -164,8 +164,8 @@ impl WorkspaceView {
                     .child("Esc"),
             );
 
-        let lines = Rc::new(diff_data.lines.clone());
-        let display_rows = Rc::new(diff_data.display_rows.clone());
+        let lines = Arc::clone(&diff_data.lines);
+        let display_rows = Arc::clone(&diff_data.display_rows);
         let row_count = display_rows.len();
         let entity = cx.entity().clone();
 

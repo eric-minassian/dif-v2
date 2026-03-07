@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.0](https://github.com/eric-minassian/dif-v2/compare/v0.12.0...v0.13.0) (2026-03-07)
+
+
+### Features
+
+* combine commit & open pr ([03dad4c](https://github.com/eric-minassian/dif-v2/commit/03dad4ccdc88f8fb35cfeaeecba40f5a3a73d112))
+* pr icon in session sidebar ([4f2ea52](https://github.com/eric-minassian/dif-v2/commit/4f2ea52bc9af1a0231da4bbb20256e4ec78923b4))
+
+
+### Bug Fixes
+
+* persistent git ([0def2ce](https://github.com/eric-minassian/dif-v2/commit/0def2cec57f4ced31875e3ea088ec5bf9b8b9c4b))
+* release ([3dd691f](https://github.com/eric-minassian/dif-v2/commit/3dd691f1a6dc71302e1546dcc5f5a7ab095713a6))
+* sidebar layout shift ([87b65d1](https://github.com/eric-minassian/dif-v2/commit/87b65d1061fcc52f4df16f2791d73e7e0ed7b25e))
+
 ## [0.12.0](https://github.com/eric-minassian/dif-v2/compare/v0.11.0...v0.12.0) (2026-03-07)
 
 

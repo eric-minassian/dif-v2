@@ -140,6 +140,23 @@ impl TerminalSession {
             .contains(alacritty_terminal::term::TermMode::FOCUS_IN_OUT)
     }
 
+    pub fn alt_screen_active(&self) -> bool {
+        let term = self.term.lock();
+        term.mode()
+            .contains(alacritty_terminal::term::TermMode::ALT_SCREEN)
+    }
+
+    pub fn alternate_scroll_enabled(&self) -> bool {
+        let term = self.term.lock();
+        term.mode()
+            .contains(alacritty_terminal::term::TermMode::ALTERNATE_SCROLL)
+    }
+
+    pub fn display_offset(&self) -> usize {
+        let term = self.term.lock();
+        term.grid().display_offset()
+    }
+
     pub fn cursor_shape(&self) -> CursorShape {
         let term = self.term.lock();
         match term.cursor_style().shape {

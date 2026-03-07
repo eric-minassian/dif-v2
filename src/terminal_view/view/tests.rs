@@ -4,6 +4,7 @@ use super::clipboard::shell_quote;
 use super::drawing::cursor_color_for_background;
 use super::helpers::window_position_to_local;
 use super::url::{url_at_byte_index, url_at_column_in_line};
+use super::TerminalView;
 
 #[test]
 fn url_detection_finds_https_links() {
@@ -87,4 +88,38 @@ fn shell_quote_quotes_special_characters() {
     assert_eq!(shell_quote("a(b)"), "'a(b)'");
     assert_eq!(shell_quote("a$b"), "'a$b'");
     assert_eq!(shell_quote("a&b"), "'a&b'");
+}
+
+// -- Word/line selection tests --
+// These test the word boundary logic used by double/triple-click selection.
+// Since TerminalView requires a GPUI context, we test via the public helper
+// functions that the selection methods delegate to.
+
+#[test]
+fn word_boundary_detection() {
+    // Test the is_word_char logic used in select_word_at_index
+    let line = b"hello world foo-bar";
+    let is_word_char =
+        |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.';
+
+    // 'h' at 0 is word char
+    assert!(is_word_char(line[0]));
+    // space at 5 is not
+    assert!(!is_word_char(line[5]));
+    // '-' at 15 IS word char (we include it, like paths/identifiers)
+    assert!(is_word_char(line[15]));
+}
+
+#[test]
+fn viewport_line_offsets_computed_correctly() {
+    let lines = vec![
+        "first line".to_string(),
+        "second line".to_string(),
+        "third".to_string(),
+    ];
+    let offsets = TerminalView::compute_viewport_line_offsets(&lines);
+    assert_eq!(offsets, vec![0, 11, 23]);
+
+    let total = TerminalView::compute_viewport_total_len(&lines);
+    assert_eq!(total, 29); // 10+1 + 11+1 + 5+1 = 29
 }

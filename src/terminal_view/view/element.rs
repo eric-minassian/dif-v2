@@ -433,16 +433,12 @@ impl Element for TerminalTextElement {
 
         let cursor = {
             let view = self.view.read(cx);
-            view.focus_handle
-                .is_focused(window)
-                .then(|| {
-                    let pos = view.session.cursor_position()?;
-                    let shape = view.session.cursor_shape();
-                    Some((pos, shape))
-                })
-                .flatten()
+            let is_focused = view.focus_handle.is_focused(window);
+            let pos = view.session.cursor_position();
+            let shape = view.session.cursor_shape();
+            pos.map(|p| (p, shape, is_focused))
         }
-        .and_then(|((col, row), cursor_shape)| {
+        .and_then(|((col, row), cursor_shape, is_focused)| {
             let background = { self.view.read(cx).session.default_background() };
             let mut cursor_color = cursor_color_for_background(background);
             let y = bounds.top() + line_height * (row.saturating_sub(1)) as f32;
@@ -453,6 +449,26 @@ impl Element for TerminalTextElement {
             let (cw, _) = metrics?;
 
             use super::super::CursorShape;
+
+            if !is_focused {
+                // Unfocused: hollow block cursor (outline only, like Zed)
+                cursor_color.a = 0.5;
+                let thickness = px(1.0);
+                return Some(PaintQuad {
+                    bounds: Bounds::new(point(x, y), size(px(cw), line_height)),
+                    corner_radii: Default::default(),
+                    background: gpui::transparent_black().into(),
+                    border_widths: gpui::Edges {
+                        top: thickness,
+                        right: thickness,
+                        bottom: thickness,
+                        left: thickness,
+                    },
+                    border_color: cursor_color,
+                    border_style: Default::default(),
+                });
+            }
+
             let (cursor_w, cursor_h, cursor_y) = match cursor_shape {
                 CursorShape::Block => {
                     cursor_color.a = 0.4;

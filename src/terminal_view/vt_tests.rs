@@ -1420,6 +1420,39 @@ fn resize_to_single_row() {
 }
 
 // ===========================================================================
+// Phase 8: New terminal mode queries (Zed parity)
+// ===========================================================================
+
+#[test]
+fn alt_screen_mode_tracking() {
+    let mut t = TestTerm::default();
+    assert!(!t.session.alt_screen_active());
+    t.enter_alt_screen();
+    assert!(t.session.alt_screen_active());
+    t.exit_alt_screen();
+    assert!(!t.session.alt_screen_active());
+}
+
+#[test]
+fn alternate_scroll_mode_tracking() {
+    let mut t = TestTerm::default();
+    // ALTERNATE_SCROLL is enabled by default in alacritty_terminal
+    assert!(t.session.alternate_scroll_enabled());
+    // Disable it
+    t.feed(b"\x1b[?1007l");
+    assert!(!t.session.alternate_scroll_enabled());
+    // Re-enable it
+    t.feed(b"\x1b[?1007h");
+    assert!(t.session.alternate_scroll_enabled());
+}
+
+#[test]
+fn display_offset_starts_at_zero() {
+    let t = TestTerm::default();
+    assert_eq!(t.session.display_offset(), 0);
+}
+
+// ===========================================================================
 // Helper
 // ===========================================================================
 

@@ -251,7 +251,6 @@ impl WorkspaceView {
             .id(session_row_id)
             .group("session-row")
             .justify_between()
-            .pl(px(28.))
             .pr_3()
             .py(px(6.))
             .bg(if is_session_selected {
@@ -263,17 +262,27 @@ impl WorkspaceView {
                 el.border_l_2().border_color(t.accent_blue)
             })
             .hover(|style| style.bg(t.hover_overlay))
-            .when(show_badge, |el| {
-                el.child(
-                    div()
-                        .text_xs()
-                        .text_color(t.text_muted)
-                        .w(px(14.))
-                        .flex_shrink_0()
-                        .child(format!("{}", session_index + 1)),
-                )
-            })
-            .when_some(pr_icon, |el, icon| el.child(icon))
+            // Fixed-width left gutter: holds PR icon + badge without shifting the name
+            .child(
+                h_flex()
+                    .w(px(28.))
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_end()
+                    .gap(px(2.))
+                    .pr(px(4.))
+                    .overflow_hidden()
+                    .when_some(pr_icon, |el, icon| el.child(icon))
+                    .when(show_badge, |el| {
+                        el.child(
+                            div()
+                                .text_xs()
+                                .text_color(t.text_muted)
+                                .flex_shrink_0()
+                                .child(format!("{}", session_index + 1)),
+                        )
+                    }),
+            )
             .child(name_content)
             .child(
                 IconButton::new("delete-session-btn", IconName::X)
@@ -405,13 +414,18 @@ impl WorkspaceView {
         let url = branch_status.pr_url.clone()?;
 
         Some(
-            IconButton::new("session-pr-link", IconName::GitPullRequest)
-                .icon_size(px(14.))
-                .icon_color(color)
-                .hover_color(color)
+            div()
+                .id("session-pr-link")
+                .cursor_pointer()
+                .hover(move |style| style.text_color(color.opacity(0.8)))
                 .on_click(move |_event, _window, _cx| {
                     let _ = std::process::Command::new("open").arg(&url).spawn();
                 })
+                .child(
+                    Icon::new(IconName::GitPullRequest)
+                        .size(px(12.))
+                        .color(color),
+                )
                 .into_any_element(),
         )
     }

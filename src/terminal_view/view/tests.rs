@@ -1,4 +1,4 @@
-use ghostty_vt::Rgb;
+use super::super::Rgb;
 
 use super::clipboard::shell_quote;
 use super::drawing::cursor_color_for_background;

@@ -1,12 +1,11 @@
 use std::ops::Range;
 
-use ghostty_vt::{KeyModifiers, encode_key_named};
 use gpui::{
     Bounds, Context, EntityInputHandler, KeyDownEvent, Pixels, SharedString, UTF16Selection,
     Window,
 };
 
-use super::helpers::{ctrl_byte_for_keystroke, should_skip_key_down_for_ime};
+use super::helpers::{ctrl_byte_for_keystroke, encode_key_named, should_skip_key_down_for_ime};
 use super::{EscapeKey, Tab, TabPrev, TerminalView};
 
 impl TerminalView {
@@ -225,13 +224,12 @@ impl TerminalView {
                 return;
             }
 
-            let modifiers = KeyModifiers {
-                shift: keystroke.modifiers.shift,
-                control: keystroke.modifiers.control,
-                alt: keystroke.modifiers.alt,
-                super_key: false,
-            };
-            if let Some(encoded) = encode_key_named(&keystroke.key, modifiers) {
+            if let Some(encoded) = encode_key_named(
+                &keystroke.key,
+                keystroke.modifiers.shift,
+                keystroke.modifiers.control,
+                keystroke.modifiers.alt,
+            ) {
                 input.send(&encoded);
                 return;
             }
@@ -270,13 +268,12 @@ impl TerminalView {
             _ => {}
         }
 
-        let modifiers = KeyModifiers {
-            shift: keystroke.modifiers.shift,
-            control: keystroke.modifiers.control,
-            alt: keystroke.modifiers.alt,
-            super_key: false,
-        };
-        if let Some(encoded) = encode_key_named(&keystroke.key, modifiers) {
+        if let Some(encoded) = encode_key_named(
+            &keystroke.key,
+            keystroke.modifiers.shift,
+            keystroke.modifiers.control,
+            keystroke.modifiers.alt,
+        ) {
             let _ = self.session.feed(&encoded);
             self.apply_side_effects(cx);
             self.schedule_viewport_refresh(cx);

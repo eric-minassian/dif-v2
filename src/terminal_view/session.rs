@@ -1,6 +1,19 @@
-use ghostty_vt::{Error, Rgb, Terminal};
+use alacritty_terminal::event::{Event as AlacEvent, EventListener};
+use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::index::{Column, Line, Point};
+use alacritty_terminal::term::cell::Flags as CellFlags;
+use alacritty_terminal::term::Config as AlacConfig;
+use alacritty_terminal::term::Term;
+use alacritty_terminal::vte::ansi::Processor;
+use parking_lot::FairMutex;
+use std::sync::{Arc, mpsc};
+use unicode_width::UnicodeWidthChar as _;
 
-use super::TerminalConfig;
+use super::config::{Rgb, StyleRun, TerminalConfig};
+use super::view::drawing::{
+    CELL_STYLE_FLAG_BOLD, CELL_STYLE_FLAG_FAINT, CELL_STYLE_FLAG_ITALIC,
+    CELL_STYLE_FLAG_STRIKETHROUGH, CELL_STYLE_FLAG_UNDERLINE,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CursorShape {
@@ -10,55 +23,118 @@ pub enum CursorShape {
     Underline,
 }
 
-impl CursorShape {
-    fn from_decscusr(ps: u8) -> Self {
-        match ps {
-            1 | 2 => Self::Block,
-            3 | 4 => Self::Underline,
-            5 | 6 => Self::Bar,
-            _ => Self::Bar,
-        }
+#[derive(Clone)]
+struct Listener {
+    event_tx: mpsc::Sender<AlacEvent>,
+}
+
+impl EventListener for Listener {
+    fn send_event(&self, event: AlacEvent) {
+        let _ = self.event_tx.send(event);
     }
 }
 
 pub struct TerminalSession {
     config: TerminalConfig,
-    terminal: Terminal,
-    bracketed_paste_enabled: bool,
-    mouse_x10_enabled: bool,
-    mouse_button_event_enabled: bool,
-    mouse_any_event_enabled: bool,
-    mouse_sgr_enabled: bool,
-    focus_events_enabled: bool,
-    cursor_shape: CursorShape,
+    term: Arc<FairMutex<Term<Listener>>>,
+    processor: Processor,
+    event_rx: mpsc::Receiver<AlacEvent>,
     title: Option<String>,
     clipboard_write: Option<String>,
-    parse_tail: Vec<u8>,
-    dsr_state: DsrScanState,
-    osc_query_state: OscQueryScanState,
-    decscusr_state: DecscusrScanState,
+    last_display_offset: usize,
+}
+
+/// ANSI color palette: indices 0..=255
+const ANSI_COLORS: [(u8, u8, u8); 256] = {
+    let mut table = [(0u8, 0u8, 0u8); 256];
+
+    // Standard 16 colors (Apple System Colors theme)
+    table[0] = (0x1a, 0x1a, 0x1a); // black
+    table[1] = (0xcc, 0x37, 0x2e); // red
+    table[2] = (0x26, 0xa4, 0x39); // green
+    table[3] = (0xcd, 0xac, 0x08); // yellow
+    table[4] = (0x08, 0x69, 0xcb); // blue
+    table[5] = (0x96, 0x47, 0xbf); // magenta
+    table[6] = (0x47, 0x9e, 0xc2); // cyan
+    table[7] = (0x98, 0x98, 0x9d); // white
+    table[8] = (0x46, 0x46, 0x46); // bright black
+    table[9] = (0xff, 0x45, 0x3a); // bright red
+    table[10] = (0x32, 0xd7, 0x4b); // bright green
+    table[11] = (0xff, 0xd6, 0x0a); // bright yellow
+    table[12] = (0x0a, 0x84, 0xff); // bright blue
+    table[13] = (0xbf, 0x5a, 0xf2); // bright magenta
+    table[14] = (0x76, 0xd6, 0xff); // bright cyan
+    table[15] = (0xff, 0xff, 0xff); // bright white
+
+    // 216-color cube (indices 16..=231)
+    let mut i = 16usize;
+    let mut ri = 0u8;
+    while ri < 6 {
+        let mut gi = 0u8;
+        while gi < 6 {
+            let mut bi = 0u8;
+            while bi < 6 {
+                let r = if ri == 0 { 0 } else { 55 + 40 * ri };
+                let g = if gi == 0 { 0 } else { 55 + 40 * gi };
+                let b = if bi == 0 { 0 } else { 55 + 40 * bi };
+                table[i] = (r, g, b);
+                i += 1;
+                bi += 1;
+            }
+            gi += 1;
+        }
+        ri += 1;
+    }
+
+    // Grayscale ramp (indices 232..=255)
+    let mut j = 0u8;
+    while j < 24 {
+        let v = 8 + 10 * j;
+        table[232 + j as usize] = (v, v, v);
+        j += 1;
+    }
+
+    table
+};
+
+struct SizeDimensions {
+    cols: usize,
+    rows: usize,
+}
+
+impl Dimensions for SizeDimensions {
+    fn total_lines(&self) -> usize {
+        // Provide scrollback so that reflow on resize can preserve content.
+        self.rows + 1000
+    }
+    fn screen_lines(&self) -> usize {
+        self.rows
+    }
+    fn columns(&self) -> usize {
+        self.cols
+    }
 }
 
 impl TerminalSession {
-    pub fn new(config: TerminalConfig) -> Result<Self, Error> {
-        let mut terminal = Terminal::new(config.cols, config.rows)?;
-        terminal.set_default_colors(config.default_fg, config.default_bg);
+    pub fn new(config: TerminalConfig) -> Result<Self, anyhow::Error> {
+        let (event_tx, event_rx) = mpsc::channel();
+        let listener = Listener { event_tx };
+
+        let alac_config = AlacConfig::default();
+        let dims = SizeDimensions {
+            cols: config.cols as usize,
+            rows: config.rows as usize,
+        };
+        let term = Term::new(alac_config, &dims, listener);
+
         Ok(Self {
             config,
-            terminal,
-            bracketed_paste_enabled: false,
-            mouse_x10_enabled: false,
-            mouse_button_event_enabled: false,
-            mouse_any_event_enabled: false,
-            mouse_sgr_enabled: false,
-            focus_events_enabled: false,
-            cursor_shape: CursorShape::default(),
+            term: Arc::new(FairMutex::new(term)),
+            processor: Processor::new(),
+            event_rx,
             title: None,
             clipboard_write: None,
-            parse_tail: Vec::new(),
-            dsr_state: DsrScanState::default(),
-            osc_query_state: OscQueryScanState::default(),
-            decscusr_state: DecscusrScanState::default(),
+            last_display_offset: 0,
         })
     }
 
@@ -78,34 +154,52 @@ impl TerminalSession {
         self.config.default_bg
     }
 
-
-
     pub fn bracketed_paste_enabled(&self) -> bool {
-        self.bracketed_paste_enabled
+        let term = self.term.lock();
+        term.mode()
+            .contains(alacritty_terminal::term::TermMode::BRACKETED_PASTE)
     }
 
     pub fn mouse_reporting_enabled(&self) -> bool {
-        self.mouse_x10_enabled || self.mouse_button_event_enabled || self.mouse_any_event_enabled
+        let term = self.term.lock();
+        let mode = term.mode();
+        mode.contains(alacritty_terminal::term::TermMode::MOUSE_REPORT_CLICK)
+            || mode.contains(alacritty_terminal::term::TermMode::MOUSE_DRAG)
+            || mode.contains(alacritty_terminal::term::TermMode::MOUSE_MOTION)
     }
 
     pub fn mouse_sgr_enabled(&self) -> bool {
-        self.mouse_sgr_enabled
+        let term = self.term.lock();
+        term.mode()
+            .contains(alacritty_terminal::term::TermMode::SGR_MOUSE)
     }
 
     pub fn mouse_button_event_enabled(&self) -> bool {
-        self.mouse_button_event_enabled
+        let term = self.term.lock();
+        term.mode()
+            .contains(alacritty_terminal::term::TermMode::MOUSE_DRAG)
     }
 
     pub fn mouse_any_event_enabled(&self) -> bool {
-        self.mouse_any_event_enabled
+        let term = self.term.lock();
+        term.mode()
+            .contains(alacritty_terminal::term::TermMode::MOUSE_MOTION)
     }
 
     pub fn focus_events_enabled(&self) -> bool {
-        self.focus_events_enabled
+        let term = self.term.lock();
+        term.mode()
+            .contains(alacritty_terminal::term::TermMode::FOCUS_IN_OUT)
     }
 
     pub fn cursor_shape(&self) -> CursorShape {
-        self.cursor_shape
+        let term = self.term.lock();
+        match term.cursor_style().shape {
+            alacritty_terminal::vte::ansi::CursorShape::Block => CursorShape::Block,
+            alacritty_terminal::vte::ansi::CursorShape::Underline => CursorShape::Underline,
+            alacritty_terminal::vte::ansi::CursorShape::Beam => CursorShape::Bar,
+            _ => CursorShape::Bar,
+        }
     }
 
     pub fn title(&self) -> Option<&str> {
@@ -117,482 +211,409 @@ impl TerminalSession {
     }
 
     pub fn hyperlink_at(&self, col: u16, row: u16) -> Option<String> {
-        self.terminal.hyperlink_at(col, row)
+        let term = self.term.lock();
+        let point = Point::new(Line(row.saturating_sub(1) as i32), Column(col.saturating_sub(1) as usize));
+        let cell = &term.grid()[point];
+        cell.hyperlink().map(|h| h.uri().to_string())
     }
 
     pub fn take_clipboard_write(&mut self) -> Option<String> {
         self.clipboard_write.take()
     }
 
-    fn update_state_from_output(&mut self, bytes: &[u8]) {
-        for &b in bytes {
-            if let Some(shape_code) = self.decscusr_state.advance(b) {
-                self.cursor_shape = CursorShape::from_decscusr(shape_code);
-            }
-        }
-
-        const TAIL_LIMIT: usize = 2048;
-
-        self.parse_tail.extend_from_slice(bytes);
-        if self.parse_tail.len() > TAIL_LIMIT {
-            let drop_len = self.parse_tail.len() - TAIL_LIMIT;
-            self.parse_tail.drain(0..drop_len);
-        }
-        let buf = self.parse_tail.as_slice();
-
-        let mut i = 0usize;
-        while i + 2 < buf.len() {
-            if buf[i] != 0x1b || buf[i + 1] != b'[' || buf[i + 2] != b'?' {
-                i += 1;
-                continue;
-            }
-
-            let mut k = i + 3;
-            let mut nums: Vec<u32> = Vec::new();
-            let mut num: u32 = 0;
-            let mut saw_digit = false;
-            let mut consumed = false;
-
-            while k < buf.len() {
-                let b = buf[k];
-                if b.is_ascii_digit() {
-                    saw_digit = true;
-                    num = num.saturating_mul(10).saturating_add((b - b'0') as u32);
-                    k += 1;
-                    continue;
+    fn drain_events(&mut self) {
+        while let Ok(event) = self.event_rx.try_recv() {
+            match event {
+                AlacEvent::Title(title) => {
+                    self.title = Some(title);
                 }
-
-                if b == b';' {
-                    if saw_digit {
-                        nums.push(num);
-                        num = 0;
-                        saw_digit = false;
+                AlacEvent::ResetTitle => {
+                    self.title = None;
+                }
+                AlacEvent::ClipboardStore(_, text) => {
+                    self.clipboard_write = Some(text);
+                }
+                AlacEvent::PtyWrite(text) => {
+                    // Alacritty handles DSR/DA/OSC color queries internally
+                    // and emits PtyWrite events with the responses.
+                    // We store them for feed_with_pty_responses to pick up.
+                    if let Some(existing) = self.clipboard_write.as_mut() {
+                        // Don't overwrite clipboard with PTY responses
+                        let _ = existing;
                     }
-                    k += 1;
-                    continue;
+                    // PtyWrite responses are handled via the send callback
+                    // in feed_with_pty_responses. For plain feed(), they're ignored.
+                    let _ = text;
                 }
-
-                if b == b'h' || b == b'l' {
-                    if saw_digit {
-                        nums.push(num);
-                    }
-
-                    let enabled = b == b'h';
-                    for ps in nums {
-                        match ps {
-                            2004 => self.bracketed_paste_enabled = enabled,
-                            1000 => self.mouse_x10_enabled = enabled,
-                            1002 => self.mouse_button_event_enabled = enabled,
-                            1003 => self.mouse_any_event_enabled = enabled,
-                            1006 => self.mouse_sgr_enabled = enabled,
-                            1004 => self.focus_events_enabled = enabled,
-                            _ => {}
-                        }
-                    }
-
-                    i = k + 1;
-                    consumed = true;
-                    break;
-                }
-
-                i += 1;
-                consumed = true;
-                break;
+                _ => {}
             }
-
-            if k >= buf.len() && !consumed {
-                break;
-            }
-
-            if consumed {
-                continue;
-            }
-
-            i += 1;
-        }
-
-        let mut last_title: Option<String> = None;
-        let mut last_clipboard: Option<String> = None;
-        let mut j = 0usize;
-        while j + 1 < buf.len() {
-            if buf[j] != 0x1b || buf[j + 1] != b']' {
-                j += 1;
-                continue;
-            }
-
-            let mut k = j + 2;
-            let mut ps: u32 = 0;
-            let mut saw_digit = false;
-            while k < buf.len() {
-                let b = buf[k];
-                if b.is_ascii_digit() {
-                    saw_digit = true;
-                    ps = ps.saturating_mul(10).saturating_add((b - b'0') as u32);
-                    k += 1;
-                    continue;
-                }
-                if b == b';' {
-                    k += 1;
-                    break;
-                }
-                break;
-            }
-            if !saw_digit || k >= buf.len() {
-                j += 1;
-                continue;
-            }
-
-            let title_start = k;
-            while k < buf.len() {
-                match buf[k] {
-                    0x07 => {
-                        if ps == 0 || ps == 2 {
-                            last_title =
-                                Some(String::from_utf8_lossy(&buf[title_start..k]).into_owned());
-                        } else if ps == 52 {
-                            last_clipboard = decode_osc_52(&buf[title_start..k]);
-                        }
-                        k += 1;
-                        break;
-                    }
-                    0x1b if k + 1 < buf.len() && buf[k + 1] == b'\\' => {
-                        if ps == 0 || ps == 2 {
-                            last_title =
-                                Some(String::from_utf8_lossy(&buf[title_start..k]).into_owned());
-                        } else if ps == 52 {
-                            last_clipboard = decode_osc_52(&buf[title_start..k]);
-                        }
-                        k += 2;
-                        break;
-                    }
-                    _ => k += 1,
-                }
-            }
-
-            j = k.max(j + 1);
-        }
-
-        if let Some(title) = last_title {
-            self.title = Some(title);
-        }
-        if let Some(clipboard) = last_clipboard {
-            self.clipboard_write = Some(clipboard);
         }
     }
 
-    pub fn feed(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        self.update_state_from_output(bytes);
-        self.terminal.feed(bytes)
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<(), anyhow::Error> {
+        {
+            let mut term = self.term.lock();
+            for byte in bytes {
+                self.processor.advance(&mut *term, *byte);
+            }
+        }
+        self.drain_events();
+        Ok(())
     }
 
     pub fn feed_with_pty_responses(
         &mut self,
         bytes: &[u8],
         mut send: impl FnMut(&[u8]),
-    ) -> Result<(), Error> {
-        self.update_state_from_output(bytes);
-
-        let mut seg_start = 0usize;
-        for (i, &b) in bytes.iter().enumerate() {
-            let dsr = self.dsr_state.advance(b);
-            let osc = self.osc_query_state.advance(b);
-            if dsr.is_none() && osc.is_none() {
-                continue;
+    ) -> Result<(), anyhow::Error> {
+        {
+            let mut term = self.term.lock();
+            for byte in bytes {
+                self.processor.advance(&mut *term, *byte);
             }
-
-            self.terminal.feed(&bytes[seg_start..=i])?;
-            seg_start = i + 1;
-
-            if let Some(query) = dsr {
-                match query {
-                    TerminalQuery::DeviceStatus => send(b"\x1b[0n"),
-                    TerminalQuery::CursorPosition => {
-                        let (col, row) = self.cursor_position().unwrap_or((1, 1));
-                        let resp = format!("\x1b[{};{}R", row, col);
-                        send(resp.as_bytes());
-                    }
-                    TerminalQuery::PrimaryDeviceAttributes => {
-                        // VT220 (62) with ANSI color (22)
-                        send(b"\x1b[?62;22c");
-                    }
-                    TerminalQuery::SecondaryDeviceAttributes => {
-                        // VT100 family (1), version 100, no hardware option (0)
-                        send(b"\x1b[>1;100;0c");
-                    }
+        }
+        // Drain events, forwarding PtyWrite responses
+        while let Ok(event) = self.event_rx.try_recv() {
+            match event {
+                AlacEvent::Title(title) => {
+                    self.title = Some(title);
                 }
-            }
-
-            if let Some(query) = osc {
-                let rgb = match query {
-                    OscQuery::ForegroundColor => {
-                        let fg = self.config.default_fg;
-                        (fg.r, fg.g, fg.b)
-                    }
-                    OscQuery::BackgroundColor => {
-                        let bg = self.config.default_bg;
-                        (bg.r, bg.g, bg.b)
-                    }
-                };
-                let resp = osc_color_query_response(query, rgb);
-                send(resp.as_bytes());
+                AlacEvent::ResetTitle => {
+                    self.title = None;
+                }
+                AlacEvent::ClipboardStore(_, text) => {
+                    self.clipboard_write = Some(text);
+                }
+                AlacEvent::PtyWrite(text) => {
+                    send(text.as_bytes());
+                }
+                AlacEvent::ColorRequest(idx, format_fn) => {
+                    let rgb = self.resolve_color_index(idx);
+                    let response = format_fn(rgb);
+                    send(response.as_bytes());
+                }
+                _ => {}
             }
         }
-
-        if seg_start < bytes.len() {
-            self.terminal.feed(&bytes[seg_start..])?;
-        }
-
         Ok(())
     }
 
-    pub fn dump_viewport(&self) -> Result<String, Error> {
-        self.terminal.dump_viewport()
+    fn resolve_color_index(&self, idx: usize) -> alacritty_terminal::vte::ansi::Rgb {
+        let term = self.term.lock();
+        if let Some(rgb) = term.colors()[idx] {
+            return rgb;
+        }
+        // Fall back to our ANSI table for indexed colors
+        if idx < 256 {
+            let (r, g, b) = ANSI_COLORS[idx];
+            return alacritty_terminal::vte::ansi::Rgb { r, g, b };
+        }
+        // Foreground/background defaults
+        match idx {
+            256 => alacritty_terminal::vte::ansi::Rgb {
+                r: self.config.default_fg.r,
+                g: self.config.default_fg.g,
+                b: self.config.default_fg.b,
+            },
+            257 => alacritty_terminal::vte::ansi::Rgb {
+                r: self.config.default_bg.r,
+                g: self.config.default_bg.g,
+                b: self.config.default_bg.b,
+            },
+            _ => alacritty_terminal::vte::ansi::Rgb {
+                r: 0xFF,
+                g: 0xFF,
+                b: 0xFF,
+            },
+        }
     }
 
-    pub fn dump_viewport_row(&self, row: u16) -> Result<String, Error> {
-        self.terminal.dump_viewport_row(row)
+    fn resolve_cell_color(
+        &self,
+        color: alacritty_terminal::vte::ansi::Color,
+        term: &Term<Listener>,
+    ) -> Rgb {
+        use alacritty_terminal::vte::ansi::{Color, NamedColor};
+        match color {
+            Color::Spec(rgb) => Rgb {
+                r: rgb.r,
+                g: rgb.g,
+                b: rgb.b,
+            },
+            Color::Indexed(idx) => {
+                if let Some(rgb) = term.colors()[idx as usize] {
+                    Rgb {
+                        r: rgb.r,
+                        g: rgb.g,
+                        b: rgb.b,
+                    }
+                } else if (idx as usize) < ANSI_COLORS.len() {
+                    let (r, g, b) = ANSI_COLORS[idx as usize];
+                    Rgb { r, g, b }
+                } else {
+                    self.config.default_fg
+                }
+            }
+            Color::Named(name) => {
+                // Handle foreground/background named colors with our configured defaults
+                match name {
+                    NamedColor::Foreground => {
+                        if let Some(rgb) = term.colors()[name as usize] {
+                            Rgb { r: rgb.r, g: rgb.g, b: rgb.b }
+                        } else {
+                            self.config.default_fg
+                        }
+                    }
+                    NamedColor::Background => {
+                        if let Some(rgb) = term.colors()[name as usize] {
+                            Rgb { r: rgb.r, g: rgb.g, b: rgb.b }
+                        } else {
+                            self.config.default_bg
+                        }
+                    }
+                    NamedColor::BrightForeground => {
+                        if let Some(rgb) = term.colors()[name as usize] {
+                            Rgb { r: rgb.r, g: rgb.g, b: rgb.b }
+                        } else {
+                            self.config.default_fg
+                        }
+                    }
+                    NamedColor::DimForeground => {
+                        if let Some(rgb) = term.colors()[name as usize] {
+                            Rgb { r: rgb.r, g: rgb.g, b: rgb.b }
+                        } else {
+                            self.config.default_fg
+                        }
+                    }
+                    _ => {
+                        let idx = name as usize;
+                        if let Some(rgb) = term.colors()[idx] {
+                            Rgb {
+                                r: rgb.r,
+                                g: rgb.g,
+                                b: rgb.b,
+                            }
+                        } else if idx < ANSI_COLORS.len() {
+                            let (r, g, b) = ANSI_COLORS[idx];
+                            Rgb { r, g, b }
+                        } else {
+                            self.config.default_fg
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn dump_viewport(&self) -> Result<String, anyhow::Error> {
+        let term = self.term.lock();
+        let rows = term.screen_lines();
+        let cols = term.columns();
+        let mut output = String::new();
+
+        for row_idx in 0..rows {
+            let line = Line(row_idx as i32);
+            let mut row_str = String::new();
+
+            for col_idx in 0..cols {
+                let point = Point::new(line, Column(col_idx));
+                let cell = &term.grid()[point];
+                let ch = cell.c;
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+                if ch == '\0' || ch == ' ' {
+                    row_str.push(' ');
+                } else {
+                    row_str.push(ch);
+                }
+            }
+
+            output.push_str(&row_str);
+            if row_idx + 1 < rows {
+                output.push('\n');
+            }
+        }
+
+        Ok(output)
+    }
+
+    pub fn dump_viewport_row(&self, row: u16) -> Result<String, anyhow::Error> {
+        let term = self.term.lock();
+        let cols = term.columns();
+        let line = Line(row as i32);
+        let mut row_str = String::new();
+
+        for col_idx in 0..cols {
+            let point = Point::new(line, Column(col_idx));
+            let cell = &term.grid()[point];
+            if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+            let ch = cell.c;
+            if ch == '\0' || ch == ' ' {
+                row_str.push(' ');
+            } else {
+                row_str.push(ch);
+            }
+        }
+
+        row_str.push('\n');
+        Ok(row_str)
     }
 
     pub fn dump_viewport_row_style_runs(
         &self,
         row: u16,
-    ) -> Result<Vec<ghostty_vt::StyleRun>, Error> {
-        self.terminal.dump_viewport_row_style_runs(row)
+    ) -> Result<Vec<StyleRun>, anyhow::Error> {
+        let term = self.term.lock();
+        let cols = term.columns();
+        let line = Line(row as i32);
+
+        let mut runs = Vec::new();
+        let mut current_run: Option<(Rgb, Rgb, u8, u16)> = None; // (fg, bg, flags, start_col)
+        let mut col_pos: u16 = 1; // 1-based
+
+        for col_idx in 0..cols {
+            let point = Point::new(line, Column(col_idx));
+            let cell = &term.grid()[point];
+
+            if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+
+            let mut fg = self.resolve_cell_color(cell.fg, &term);
+            let mut bg = self.resolve_cell_color(cell.bg, &term);
+
+            let mut flags = 0u8;
+            if cell.flags.contains(CellFlags::BOLD) {
+                flags |= CELL_STYLE_FLAG_BOLD;
+            }
+            if cell.flags.contains(CellFlags::ITALIC) {
+                flags |= CELL_STYLE_FLAG_ITALIC;
+            }
+            if cell.flags.intersects(
+                CellFlags::UNDERLINE
+                    | CellFlags::DOUBLE_UNDERLINE
+                    | CellFlags::UNDERCURL
+                    | CellFlags::DOTTED_UNDERLINE
+                    | CellFlags::DASHED_UNDERLINE,
+            ) {
+                flags |= CELL_STYLE_FLAG_UNDERLINE;
+            }
+            if cell.flags.contains(CellFlags::DIM) {
+                flags |= CELL_STYLE_FLAG_FAINT;
+            }
+            if cell.flags.contains(CellFlags::STRIKEOUT) {
+                flags |= CELL_STYLE_FLAG_STRIKETHROUGH;
+            }
+
+            // Handle inverse
+            if cell.flags.contains(CellFlags::INVERSE) {
+                std::mem::swap(&mut fg, &mut bg);
+            }
+
+            if let Some((run_fg, run_bg, run_flags, start)) = current_run {
+                if run_fg == fg && run_bg == bg && run_flags == flags {
+                    // Continue the current run
+                } else {
+                    runs.push(StyleRun {
+                        start_col: start,
+                        end_col: col_pos - 1,
+                        fg: run_fg,
+                        bg: run_bg,
+                        flags: run_flags,
+                    });
+                    current_run = Some((fg, bg, flags, col_pos));
+                }
+            } else {
+                current_run = Some((fg, bg, flags, col_pos));
+            }
+
+            let ch_width = cell.c.width().unwrap_or(1).max(1) as u16;
+            col_pos += ch_width;
+        }
+
+        if let Some((fg, bg, flags, start)) = current_run {
+            runs.push(StyleRun {
+                start_col: start,
+                end_col: col_pos - 1,
+                fg,
+                bg,
+                flags,
+            });
+        }
+
+        Ok(runs)
     }
 
     pub fn cursor_position(&self) -> Option<(u16, u16)> {
-        self.terminal.cursor_position()
+        let term = self.term.lock();
+        let cursor = term.grid().cursor.point;
+        // Convert to 1-based
+        Some((
+            cursor.column.0 as u16 + 1,
+            cursor.line.0 as u16 + 1,
+        ))
     }
 
-    pub fn scroll_viewport(&mut self, delta_lines: i32) -> Result<(), Error> {
-        self.terminal.scroll_viewport(delta_lines)
+    pub fn scroll_viewport(&mut self, delta_lines: i32) -> Result<(), anyhow::Error> {
+        let mut term = self.term.lock();
+        term.scroll_display(Scroll::Delta(delta_lines));
+        Ok(())
     }
 
-    pub fn scroll_viewport_top(&mut self) -> Result<(), Error> {
-        self.terminal.scroll_viewport_top()
+    pub fn scroll_viewport_top(&mut self) -> Result<(), anyhow::Error> {
+        let mut term = self.term.lock();
+        term.scroll_display(Scroll::Top);
+        Ok(())
     }
 
-    pub fn scroll_viewport_bottom(&mut self) -> Result<(), Error> {
-        self.terminal.scroll_viewport_bottom()
+    pub fn scroll_viewport_bottom(&mut self) -> Result<(), anyhow::Error> {
+        let mut term = self.term.lock();
+        term.scroll_display(Scroll::Bottom);
+        Ok(())
     }
 
-    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), Error> {
+    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), anyhow::Error> {
         self.config.cols = cols;
         self.config.rows = rows;
-        self.terminal.resize(cols, rows)
+        let mut term = self.term.lock();
+        let dims = SizeDimensions {
+            cols: cols as usize,
+            rows: rows as usize,
+        };
+        term.resize(dims);
+        Ok(())
     }
 
     pub(crate) fn take_dirty_viewport_rows(&mut self) -> Vec<u16> {
-        self.terminal
-            .take_dirty_viewport_rows(self.config.rows)
-            .unwrap_or_default()
+        use alacritty_terminal::term::TermDamage;
+        let mut term = self.term.lock();
+        let mut dirty = Vec::new();
+        match term.damage() {
+            TermDamage::Full => {
+                let rows = term.screen_lines();
+                for row in 0..rows {
+                    dirty.push(row as u16);
+                }
+            }
+            TermDamage::Partial(iter) => {
+                for bounds in iter {
+                    dirty.push(bounds.line as u16);
+                }
+            }
+        }
+        term.reset_damage();
+        dirty
     }
 
     pub(crate) fn take_viewport_scroll_delta(&mut self) -> i32 {
-        self.terminal.take_viewport_scroll_delta()
+        let term = self.term.lock();
+        let current_offset = term.grid().display_offset();
+        let delta = self.last_display_offset as i32 - current_offset as i32;
+        drop(term);
+        self.last_display_offset = self.term.lock().grid().display_offset();
+        delta
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-enum TerminalQuery {
-    DeviceStatus,
-    CursorPosition,
-    PrimaryDeviceAttributes,
-    SecondaryDeviceAttributes,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OscQuery {
-    ForegroundColor,
-    BackgroundColor,
-}
-
-fn osc_color_query_response(query: OscQuery, (r, g, b): (u8, u8, u8)) -> String {
-    let ps = match query {
-        OscQuery::ForegroundColor => 10,
-        OscQuery::BackgroundColor => 11,
-    };
-
-    let r16 = u16::from(r) * 0x0101;
-    let g16 = u16::from(g) * 0x0101;
-    let b16 = u16::from(b) * 0x0101;
-
-    format!("\x1b]{};rgb:{:04x}/{:04x}/{:04x}\x1b\\", ps, r16, g16, b16)
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-enum DsrScanState {
-    #[default]
-    Idle,
-    Esc,
-    Csi,
-    CsiQ,
-    CsiGt,
-    Csi5,
-    CsiQ5,
-    Csi6,
-    CsiQ6,
-    CsiZero,
-    CsiGtZero,
-}
-
-impl DsrScanState {
-    fn advance(&mut self, b: u8) -> Option<TerminalQuery> {
-        use DsrScanState::*;
-
-        let matched = match (*self, b) {
-            (Csi5, b'n') | (CsiQ5, b'n') => Some(TerminalQuery::DeviceStatus),
-            (Csi6, b'n') | (CsiQ6, b'n') => Some(TerminalQuery::CursorPosition),
-            (Csi, b'c') | (CsiZero, b'c') => Some(TerminalQuery::PrimaryDeviceAttributes),
-            (CsiGt, b'c') | (CsiGtZero, b'c') => {
-                Some(TerminalQuery::SecondaryDeviceAttributes)
-            }
-            _ => None,
-        };
-
-        *self = match (*self, b) {
-            (_, 0x1b) => Esc,
-            (Esc, b'[') => Csi,
-            (Csi, b'?') => CsiQ,
-            (Csi, b'>') => CsiGt,
-            (Csi, b'5') => Csi5,
-            (CsiQ, b'5') => CsiQ5,
-            (Csi, b'6') => Csi6,
-            (CsiQ, b'6') => CsiQ6,
-            (Csi, b'0') => CsiZero,
-            (CsiGt, b'0') => CsiGtZero,
-            (Csi, b'c') | (CsiZero, b'c') => Idle,
-            (CsiGt, b'c') | (CsiGtZero, b'c') => Idle,
-            (Csi5, b'n') => Idle,
-            (CsiQ5, b'n') => Idle,
-            (Csi6, b'n') => Idle,
-            (CsiQ6, b'n') => Idle,
-            _ => Idle,
-        };
-
-        matched
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-enum OscQueryScanState {
-    #[default]
-    Idle,
-    Esc,
-    Osc,
-    Ps {
-        value: u32,
-    },
-    AfterSemicolon {
-        ps: u32,
-    },
-    Query {
-        ps: u32,
-    },
-    StEscape {
-        ps: u32,
-    },
-}
-
-impl OscQueryScanState {
-    fn advance(&mut self, b: u8) -> Option<OscQuery> {
-        use OscQueryScanState::*;
-
-        let matched = match (*self, b) {
-            (Query { ps }, 0x07) => match ps {
-                10 => Some(OscQuery::ForegroundColor),
-                11 => Some(OscQuery::BackgroundColor),
-                _ => None,
-            },
-            (StEscape { ps }, b'\\') => match ps {
-                10 => Some(OscQuery::ForegroundColor),
-                11 => Some(OscQuery::BackgroundColor),
-                _ => None,
-            },
-            _ => None,
-        };
-
-        *self = match (*self, b) {
-            (Query { ps }, 0x1b) => StEscape { ps },
-            (_, 0x1b) => Esc,
-            (Esc, b']') => Osc,
-            (Esc, _) => Idle,
-            (Osc, d) if d.is_ascii_digit() => Ps {
-                value: (d - b'0') as u32,
-            },
-            (Ps { value }, d) if d.is_ascii_digit() => Ps {
-                value: value.saturating_mul(10).saturating_add((d - b'0') as u32),
-            },
-            (Ps { value }, b';') => value_to_after_semicolon_state(value),
-            (Osc, _) | (Ps { .. }, _) => Idle,
-            (AfterSemicolon { ps }, b'?') => Query { ps },
-            (AfterSemicolon { .. }, _) => Idle,
-            (Query { .. }, 0x07) => Idle,
-            (Query { .. }, _) => Idle,
-            (StEscape { .. }, b'\\') => Idle,
-            (StEscape { .. }, _) => Idle,
-            _ => Idle,
-        };
-
-        matched
-    }
-}
-
-fn value_to_after_semicolon_state(ps: u32) -> OscQueryScanState {
-    match ps {
-        10 | 11 => OscQueryScanState::AfterSemicolon { ps },
-        _ => OscQueryScanState::Idle,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-enum DecscusrScanState {
-    #[default]
-    Idle,
-    Esc,
-    Csi,
-    Ps(u8),
-    Space(u8),
-}
-
-impl DecscusrScanState {
-    fn advance(&mut self, b: u8) -> Option<u8> {
-        let matched = match (*self, b) {
-            (Self::Space(value), b'q') => Some(value),
-            _ => None,
-        };
-
-        *self = match (*self, b) {
-            (_, 0x1b) => Self::Esc,
-            (Self::Esc, b'[') => Self::Csi,
-            (Self::Csi, d) if d.is_ascii_digit() => Self::Ps(d - b'0'),
-            (Self::Ps(v), d) if d.is_ascii_digit() => {
-                Self::Ps(v.saturating_mul(10).saturating_add(d - b'0'))
-            }
-            (Self::Csi, b' ') => Self::Space(0),
-            (Self::Ps(v), b' ') => Self::Space(v),
-            _ => Self::Idle,
-        };
-
-        matched
-    }
-}
-
-fn decode_osc_52(payload: &[u8]) -> Option<String> {
-    use base64::Engine as _;
-    use base64::engine::general_purpose::STANDARD;
-
-    let mut split = payload.splitn(2, |b| *b == b';');
-    let selection = split.next()?;
-    let data = split.next()?;
-
-    if !selection.contains(&b'c') {
-        return None;
-    }
-    if data.is_empty() {
-        return None;
-    }
-
-    let decoded = STANDARD.decode(data).ok()?;
-    Some(String::from_utf8_lossy(&decoded).into_owned())
 }

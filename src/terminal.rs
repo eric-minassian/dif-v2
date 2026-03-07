@@ -98,7 +98,7 @@ fn spawn_terminal_inner<T: 'static>(
     let view = cx.new(|cx: &mut Context<TerminalView>| {
         let focus_handle = cx.focus_handle();
 
-        let session = TerminalSession::new(config).expect("ghostty vt init");
+        let session = TerminalSession::new(config).expect("terminal init");
         let stdin_tx_for_input = stdin_tx.clone();
         let input = TerminalInput::new(move |bytes| {
             let _ = stdin_tx_for_input.send(bytes.to_vec());

@@ -10,8 +10,7 @@ mod viewport;
 #[cfg(test)]
 mod tests;
 
-use super::TerminalSession;
-use ghostty_vt::StyleRun;
+use super::{StyleRun, TerminalSession};
 use gpui::{
     App, Bounds, Context, FocusHandle, IntoElement, KeyBinding, MouseButton, Pixels, Render,
     SharedString, Window, actions, div, prelude::*, relative,
@@ -175,7 +174,7 @@ impl Render for TerminalView {
             let title = self
                 .session
                 .title()
-                .unwrap_or("GPUI Embedded Terminal (Ghostty VT)");
+                .unwrap_or("Terminal");
 
             if self.last_window_title.as_deref() != Some(title) {
                 window.set_window_title(title);

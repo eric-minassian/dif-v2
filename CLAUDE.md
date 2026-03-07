@@ -6,11 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Dif is a native macOS Git client built in Rust using [GPUI](https://github.com/zed-industries/zed) (Zed's UI framework). It supports multi-session workflows via git worktrees, an integrated terminal (ghostty_vt), side-by-side diffs, and GitHub CLI integration.
+Dif is a native macOS Git client built in Rust using [GPUI](https://github.com/zed-industries/zed) (Zed's UI framework). It supports multi-session workflows via git worktrees, an integrated terminal (alacritty_terminal), side-by-side diffs, and GitHub CLI integration.
 
 ## Build & Development
-
-Zig is required at build time (dependency of ghostty_vt). Install with `brew install zig` or set the `ZIG` env var to the zig binary path.
 
 ```bash
 # Build (debug)
@@ -21,7 +19,7 @@ scripts/bundle.sh              # outputs build/Dif.app
 scripts/bundle.sh --install    # also copies to /Applications
 
 # Check (what CI runs)
-ZIG=zig cargo check
+cargo check
 
 # Run tests
 cargo test
@@ -39,7 +37,7 @@ cargo run
 
 - **`workspace/`** — UI layer. `WorkspaceView` is the root view that composes all panels. Each file in this directory implements methods on `WorkspaceView` for a specific concern (sidebar, diff view, commit input, changes list, git actions, session management, settings, titlebar). Keyboard shortcuts are bound in `app.rs`.
 - **`git/`** — All git/gh CLI interactions. `mod.rs` provides `run_git()`/`run_gh()` helpers that resolve binary paths and execute commands. Submodules handle diff computation (`diff.rs` using the `similar` crate), status parsing (`status.rs`), worktree management (`worktree.rs`), and conventional commit validation (`conventional.rs`).
-- **`terminal_view/`** — Embedded terminal. `TerminalSession` wraps ghostty_vt for VT parsing; `TerminalView` renders it as a GPUI element. Submodules handle drawing, input, clipboard, mouse events, URL detection, and viewport scrolling.
+- **`terminal_view/`** — Embedded terminal. `TerminalSession` wraps `alacritty_terminal` for VT parsing; `TerminalView` renders it as a GPUI element. Submodules handle drawing, input, clipboard, mouse events, URL detection, and viewport scrolling.
 - **`state/`** — Application state types. `AppState` (top-level) → `ProjectRuntime` (per-project git snapshot, staged files) → `SessionRuntime` (terminals, commit message, branch status). `config.rs` defines the serializable config types; `git.rs` defines diff/change/branch data types; `ui.rs` defines UI state.
 - **`storage.rs`** — JSON config persistence to the user's config directory via the `directories` crate.
 - **`theme.rs`** — Dark color scheme. Static `Theme` struct accessed via `theme()`. Colors use GPUI's `Hsla`/`rgb`/`rgba`.

@@ -1,7 +1,7 @@
 use gpui::{
     App, Bounds, Element, ElementId, ElementInputHandler, GlobalElementId, IntoElement, LayoutId,
-    PaintQuad, Pixels, SharedString, Style, TextRun, UnderlineStyle, Window, fill, hsla, point, px,
-    relative, rgba, size,
+    PaintQuad, Pixels, SharedString, Style, TextRun, UnderlineStyle, Window, fill, hsla, point,
+    px, relative, rgba, size,
 };
 
 use super::TerminalView;

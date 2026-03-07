@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/eric-minassian/dif-v2/compare/v0.10.1...v0.11.0) (2026-03-07)
+
+
+### Features
+
+* zed terminal ([6d36cb9](https://github.com/eric-minassian/dif-v2/commit/6d36cb93bb6613f778a864a64cc8505e910f0df3))
+
+
+### Bug Fixes
+
+* speed up pr workflow runs ([b8d5ec3](https://github.com/eric-minassian/dif-v2/commit/b8d5ec35d521ee6601e9de347df5bf91ef74a2b5))
+
 ## [0.10.1](https://github.com/eric-minassian/dif-v2/compare/v0.10.0...v0.10.1) (2026-03-05)
 
 

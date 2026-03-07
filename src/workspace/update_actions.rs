@@ -8,6 +8,7 @@ use super::WorkspaceView;
 impl WorkspaceView {
     pub(crate) fn spawn_update_check(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.state.update_status = UpdateStatus::Checking;
+        cx.notify();
         let view = cx.entity().clone();
 
         window

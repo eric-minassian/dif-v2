@@ -8,7 +8,7 @@ use crate::text_input::{TextInput, TextInputEvent};
 use crate::theme::theme;
 use crate::updater;
 
-use super::WorkspaceView;
+use super::{SettingsEdit, WorkspaceView};
 
 impl WorkspaceView {
     pub(crate) fn on_toggle_conventional_commits(
@@ -102,7 +102,11 @@ impl WorkspaceView {
                 cx.notify();
             }
         });
-        self.settings_input = Some((repo_root, input, event_sub));
+        self.settings_input = Some(SettingsEdit {
+            repo_root,
+            input,
+            _event_sub: event_sub,
+        });
         cx.notify();
     }
 
@@ -442,10 +446,10 @@ impl WorkspaceView {
             let is_editing = self
                 .settings_input
                 .as_ref()
-                .is_some_and(|(r, _, _)| r == &repo_root);
+                .is_some_and(|s| s.repo_root == repo_root);
 
             if is_editing {
-                let input = self.settings_input.as_ref().unwrap().1.clone();
+                let input = self.settings_input.as_ref().unwrap().input.clone();
                 project_section = project_section.child(
                     div()
                         .mt_1()

@@ -22,7 +22,7 @@ impl WorkspaceView {
 
         let git_dir = self.working_dir(&repo_root);
 
-        window
+        self._git_poll_task = Some(window
             .spawn(cx, async move |cx| {
                 let mut tick: u32 = 0;
                 loop {
@@ -137,7 +137,6 @@ impl WorkspaceView {
                     tick = tick.wrapping_add(1);
                     cx.background_executor().timer(Duration::from_secs(2)).await;
                 }
-            })
-            .detach();
+            }));
     }
 }

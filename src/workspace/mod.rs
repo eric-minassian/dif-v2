@@ -19,7 +19,7 @@ mod update_actions;
 use std::path::{Path, PathBuf};
 
 use gpui::{
-    actions, AnyElement, Context, CursorStyle, Entity, FocusHandle, MouseButton,
+    actions, AnyElement, App, Context, CursorStyle, Entity, FocusHandle, Focusable, MouseButton,
     Subscription, Window, div, prelude::*,
 };
 
@@ -67,15 +67,42 @@ actions!(
     ]
 );
 
+struct InlineEdit {
+    repo_root: PathBuf,
+    input: Entity<TextInput>,
+    _event_sub: Subscription,
+    _blur_sub: Subscription,
+}
+
+struct SessionRename {
+    edit: InlineEdit,
+    session_id: String,
+}
+
+struct SessionCreate {
+    edit: InlineEdit,
+    validation_error: Option<String>,
+}
+
+struct SettingsEdit {
+    repo_root: PathBuf,
+    input: Entity<TextInput>,
+    _event_sub: Subscription,
+}
+
 pub struct WorkspaceView {
     state: AppState,
     focus_handle: FocusHandle,
-    /// (repo_root, session_id, input entity, event subscription, blur subscription)
-    renaming_session: Option<(PathBuf, String, Entity<TextInput>, Subscription, Subscription)>,
-    /// (repo_root, input entity, event subscription, blur subscription, validation error) for creating a new session
-    creating_session: Option<(PathBuf, Entity<TextInput>, Subscription, Subscription, Option<String>)>,
-    /// (repo_root, input entity, event subscription) for adding init commands in settings
-    settings_input: Option<(PathBuf, Entity<TextInput>, Subscription)>,
+    renaming_session: Option<SessionRename>,
+    creating_session: Option<SessionCreate>,
+    settings_input: Option<SettingsEdit>,
+    _git_poll_task: Option<gpui::Task<()>>,
+}
+
+impl Focusable for WorkspaceView {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
 }
 
 impl WorkspaceView {
@@ -109,6 +136,7 @@ impl WorkspaceView {
             renaming_session: None,
             creating_session: None,
             settings_input: None,
+            _git_poll_task: None,
         };
         if let Some(repo) = this.state.selected_repo.clone() {
             if let Some(session_id) = this.state.selected_session.clone() {
@@ -349,30 +377,9 @@ impl WorkspaceView {
     }
 }
 
-impl Render for WorkspaceView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = theme();
-
-        let left = if self.state.left_sidebar_collapsed {
-            self.render_collapsed_left_sidebar()
-        } else {
-            self.render_left_sidebar(cx)
-        };
-
-        let right = if self.state.right_sidebar_collapsed {
-            self.render_collapsed_right_sidebar()
-        } else {
-            self.render_right_sidebar(cx)
-        };
-
-        let is_resizing = self.state.resizing_sidebar.is_some();
-        let left_collapsed = self.state.left_sidebar_collapsed;
-        let right_collapsed = self.state.right_sidebar_collapsed;
-
-        div()
-            .id("workspace")
-            .track_focus(&self.focus_handle)
-            .on_action(cx.listener(|this, _: &NewSideTab, window, cx| {
+impl WorkspaceView {
+    fn register_actions(&self, root: gpui::Stateful<gpui::Div>, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+        root.on_action(cx.listener(|this, _: &NewSideTab, window, cx| {
                 this.on_add_side_tab(window, cx);
             }))
             .on_action(cx.listener(|this, _: &CloseSideTab, _window, cx| {
@@ -448,6 +455,34 @@ impl Render for WorkspaceView {
                 this.state.viewing_help = !this.state.viewing_help;
                 cx.notify();
             }))
+    }
+}
+
+impl Render for WorkspaceView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = theme();
+
+        let left = if self.state.left_sidebar_collapsed {
+            self.render_collapsed_left_sidebar()
+        } else {
+            self.render_left_sidebar(cx)
+        };
+
+        let right = if self.state.right_sidebar_collapsed {
+            self.render_collapsed_right_sidebar()
+        } else {
+            self.render_right_sidebar(cx)
+        };
+
+        let is_resizing = self.state.resizing_sidebar.is_some();
+        let left_collapsed = self.state.left_sidebar_collapsed;
+        let right_collapsed = self.state.right_sidebar_collapsed;
+
+        let root = div()
+            .id("workspace")
+            .track_focus(&self.focus_handle);
+
+        self.register_actions(root, cx)
             .on_modifiers_changed(cx.listener(
                 |this, event: &gpui::ModifiersChangedEvent, _window, cx| {
                     let new_val = event.modifiers.platform;

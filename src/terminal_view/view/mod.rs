@@ -12,8 +12,8 @@ mod tests;
 
 use super::{StyleRun, TerminalSession};
 use gpui::{
-    App, Bounds, Context, FocusHandle, IntoElement, KeyBinding, MouseButton, Pixels, Render,
-    SharedString, Window, actions, div, prelude::*, relative,
+    App, Bounds, Context, FocusHandle, Focusable, IntoElement, KeyBinding, MouseButton, Pixels,
+    Render, SharedString, Window, actions, div, prelude::*, relative,
 };
 use std::ops::Range;
 use std::sync::Once;
@@ -137,6 +137,12 @@ impl TerminalView {
     fn with_refreshed_viewport(mut self) -> Self {
         self.refresh_viewport();
         self
+    }
+}
+
+impl Focusable for TerminalView {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
     }
 }
 

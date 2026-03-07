@@ -227,10 +227,10 @@ impl WorkspaceView {
             }
 
             // Inline text input for creating a new session
-            if let Some((creating_repo, input_entity, _, _, error)) = &self.creating_session {
-                if creating_repo == &project.repo_root {
-                    container =
-                        container.child(Self::render_creating_session_row(input_entity, error));
+            if let Some(create) = &self.creating_session {
+                if create.edit.repo_root == project.repo_root {
+                    container = container
+                        .child(Self::render_creating_session_row(&create.edit.input, &create.validation_error));
                 }
             }
         }
@@ -259,14 +259,14 @@ impl WorkspaceView {
         let is_renaming = self
             .renaming_session
             .as_ref()
-            .is_some_and(|(r, s, _, _, _)| r == &project.repo_root && s == &session.id);
+            .is_some_and(|r| r.edit.repo_root == project.repo_root && r.session_id == session.id);
 
         let session_row_id = gpui::ElementId::Name(
             format!("sess-{}-{}", project.display_name, session.id).into(),
         );
 
         let name_content: AnyElement = if is_renaming {
-            let input = self.renaming_session.as_ref().unwrap().2.clone();
+            let input = self.renaming_session.as_ref().unwrap().edit.input.clone();
             div()
                 .flex_1()
                 .min_w_0()

@@ -8,7 +8,7 @@ use crate::state::SavedSession;
 use crate::text_input::{TextInput, TextInputEvent};
 
 use super::helpers::pick_initial_session;
-use super::WorkspaceView;
+use super::{InlineEdit, SessionCreate, SessionRename, WorkspaceView};
 
 impl WorkspaceView {
     /// "+" button on project row: begin creating a session for that project.
@@ -79,13 +79,11 @@ impl WorkspaceView {
             {
                 let repo_root = repo_root.clone();
                 move |this, window, cx| {
-                    if let Some((_, input_entity, _, _, _)) = this.creating_session.take() {
-                        let message = input_entity.read(cx).text().trim().to_string();
+                    if let Some(create) = this.creating_session.take() {
+                        let message = create.edit.input.read(cx).text().trim().to_string();
                         if message.is_empty() {
-                            // Cancel on blur with empty text
                             cx.notify();
                         } else {
-                            // Confirm on blur with non-empty text
                             this.on_create_session_confirm(
                                 repo_root.clone(),
                                 message,
@@ -97,7 +95,15 @@ impl WorkspaceView {
                 }
             },
         );
-        self.creating_session = Some((repo_root, input, event_sub, blur_sub, None));
+        self.creating_session = Some(SessionCreate {
+            edit: InlineEdit {
+                repo_root,
+                input,
+                _event_sub: event_sub,
+                _blur_sub: blur_sub,
+            },
+            validation_error: None,
+        });
         cx.notify();
     }
 
@@ -116,8 +122,8 @@ impl WorkspaceView {
         }
 
         if self.enforces_conventional_commits(&repo_root) && !is_conventional_commit(&message) {
-            if let Some((_, _, _, _, ref mut error)) = self.creating_session {
-                *error = Some(
+            if let Some(create) = &mut self.creating_session {
+                create.validation_error = Some(
                     "Must follow Conventional Commits: type[(scope)]: description".into(),
                 );
             }
@@ -266,14 +272,21 @@ impl WorkspaceView {
             &input.read(cx).focus_handle(cx),
             window,
             move |this, _window, cx| {
-                // Commit on blur — the subscription/entity will still be alive at this point
-                if let Some((repo, sid, input_entity, _, _)) = this.renaming_session.take() {
-                    let new_name = input_entity.read(cx).text().trim().to_string();
-                    this.on_rename_session_commit(repo, sid, new_name, cx);
+                if let Some(rename) = this.renaming_session.take() {
+                    let new_name = rename.edit.input.read(cx).text().trim().to_string();
+                    this.on_rename_session_commit(rename.edit.repo_root, rename.session_id, new_name, cx);
                 }
             },
         );
-        self.renaming_session = Some((repo_root, session_id, input, event_sub, blur_sub));
+        self.renaming_session = Some(SessionRename {
+            session_id,
+            edit: InlineEdit {
+                repo_root,
+                input,
+                _event_sub: event_sub,
+                _blur_sub: blur_sub,
+            },
+        });
         cx.notify();
     }
 

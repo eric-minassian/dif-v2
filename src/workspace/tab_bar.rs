@@ -1,4 +1,4 @@
-use gpui::{AnyElement, Context, MouseButton, Window, div, prelude::*};
+use gpui::{AnyElement, Context, Focusable, MouseButton, Window, div, prelude::*};
 
 use crate::components::empty_state;
 use crate::icons::{icon_plus, icon_x};
@@ -96,12 +96,12 @@ impl WorkspaceView {
                     .iter()
                     .find(|t| t.id == *tab_id)
             })
-            .map(|tab| tab.view.read(cx).focus_handle.clone());
+            .map(|tab| tab.view.focus_handle(cx));
 
         let main_handle = session_runtime
             .main_terminal
             .as_ref()
-            .map(|main| main.read(cx).focus_handle.clone());
+            .map(|main| main.focus_handle(cx));
 
         let side_focused = side_handle
             .as_ref()

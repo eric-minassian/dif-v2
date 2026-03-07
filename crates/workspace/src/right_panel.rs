@@ -6,13 +6,9 @@ use crate::WorkspaceView;
 
 impl WorkspaceView {
     pub(crate) fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let top = self.render_changes_panel(cx);
-        let bottom = self.render_side_terminal(cx);
-
         panel(PanelSide::Right)
             .w(px(self.state.right_sidebar_width))
-            .child(top)
-            .child(bottom)
+            .child(self.render_changes_panel(cx))
             .into_any_element()
     }
 
@@ -41,8 +37,6 @@ impl WorkspaceView {
         v_flex()
             .flex_1()
             .min_h_0()
-            .border_b_1()
-            .border_color(t.border_default)
             .when_some(error, |p, message| {
                 p.child(
                     div()

@@ -59,6 +59,28 @@ pub(crate) fn resize_handle(
         )
 }
 
+pub(crate) fn resize_handle_horizontal(
+    id: &'static str,
+    cx: &mut Context<WorkspaceView>,
+) -> impl IntoElement {
+    let t = theme();
+    div()
+        .id(id)
+        .w_full()
+        .h(px(2.))
+        .flex_shrink_0()
+        .bg(t.border_subtle)
+        .cursor(CursorStyle::ResizeUpDown)
+        .hover(|style| style.bg(t.accent_blue))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _, _window, cx| {
+                this.state.resizing_sidebar = Some(ResizingSidebar::Bottom);
+                cx.notify();
+            }),
+        )
+}
+
 pub(crate) fn refresh_project_validity(projects: &mut [SavedProject]) {
     for project in projects {
         project.last_known_valid = git::is_valid_repo(&project.repo_root);

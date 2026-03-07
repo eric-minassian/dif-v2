@@ -5,6 +5,10 @@ pub const DEFAULT_RIGHT_SIDEBAR_WIDTH: f32 = 320.0;
 pub const MIN_SIDEBAR_WIDTH: f32 = 140.0;
 pub const MAX_SIDEBAR_WIDTH: f32 = 600.0;
 
+pub const DEFAULT_BOTTOM_PANEL_HEIGHT: f32 = 250.0;
+pub const MIN_BOTTOM_PANEL_HEIGHT: f32 = 100.0;
+pub const MAX_BOTTOM_PANEL_HEIGHT: f32 = 600.0;
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SavedSession {
     pub id: String,
@@ -70,4 +74,6 @@ pub struct AppConfig {
     pub left_sidebar_width: Option<f32>,
     #[serde(default)]
     pub right_sidebar_width: Option<f32>,
+    #[serde(default)]
+    pub bottom_panel_height: Option<f32>,
 }

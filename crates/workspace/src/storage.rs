@@ -44,6 +44,8 @@ struct RawAppConfig {
     left_sidebar_width: Option<f32>,
     #[serde(default)]
     right_sidebar_width: Option<f32>,
+    #[serde(default)]
+    bottom_panel_height: Option<f32>,
 }
 
 pub fn load_config() -> Result<AppConfig> {
@@ -112,6 +114,7 @@ pub fn load_config() -> Result<AppConfig> {
         last_selected_repo: raw.last_selected_repo,
         left_sidebar_width: raw.left_sidebar_width,
         right_sidebar_width: raw.right_sidebar_width,
+        bottom_panel_height: raw.bottom_panel_height,
     })
 }
 

@@ -31,6 +31,9 @@ actions!(
         TabPrev,
         EscapeKey,
         Clear,
+        ClearLine,
+        MoveToLineStart,
+        MoveToLineEnd,
         ScrollLineUp,
         ScrollLineDown,
         ScrollPageUp,
@@ -49,6 +52,10 @@ fn ensure_key_bindings(cx: &mut App) {
             KeyBinding::new("escape", EscapeKey, Some(KEY_CONTEXT)),
             KeyBinding::new("tab", Tab, Some(KEY_CONTEXT)),
             KeyBinding::new("shift-tab", TabPrev, Some(KEY_CONTEXT)),
+            KeyBinding::new("cmd-k", Clear, Some(KEY_CONTEXT)),
+            KeyBinding::new("cmd-backspace", ClearLine, Some(KEY_CONTEXT)),
+            KeyBinding::new("cmd-left", MoveToLineStart, Some(KEY_CONTEXT)),
+            KeyBinding::new("cmd-right", MoveToLineEnd, Some(KEY_CONTEXT)),
         ]);
     });
 }
@@ -217,6 +224,39 @@ impl TerminalView {
         self.schedule_viewport_refresh(cx);
     }
 
+    pub(crate) fn on_clear_line(
+        &mut self,
+        _: &ClearLine,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        if let Some(input) = self.input.as_ref() {
+            input.send(b"\x15"); // ctrl+u
+        }
+    }
+
+    pub(crate) fn on_move_to_line_start(
+        &mut self,
+        _: &MoveToLineStart,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        if let Some(input) = self.input.as_ref() {
+            input.send(b"\x01"); // ctrl+a
+        }
+    }
+
+    pub(crate) fn on_move_to_line_end(
+        &mut self,
+        _: &MoveToLineEnd,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        if let Some(input) = self.input.as_ref() {
+            input.send(b"\x05"); // ctrl+e
+        }
+    }
+
     pub(crate) fn on_scroll_line_up(
         &mut self,
         _: &ScrollLineUp,
@@ -339,6 +379,9 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::on_tab_prev))
             .on_action(cx.listener(Self::on_escape))
             .on_action(cx.listener(Self::on_clear))
+            .on_action(cx.listener(Self::on_clear_line))
+            .on_action(cx.listener(Self::on_move_to_line_start))
+            .on_action(cx.listener(Self::on_move_to_line_end))
             .on_action(cx.listener(Self::on_scroll_line_up))
             .on_action(cx.listener(Self::on_scroll_line_down))
             .on_action(cx.listener(Self::on_scroll_page_up))

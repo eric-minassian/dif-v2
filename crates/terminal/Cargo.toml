@@ -1,0 +1,13 @@
+[package]
+name = "terminal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+gpui.workspace = true
+alacritty_terminal.workspace = true
+parking_lot.workspace = true
+portable-pty.workspace = true
+smallvec.workspace = true
+unicode-width.workspace = true

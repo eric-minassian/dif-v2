@@ -109,9 +109,11 @@ impl WorkspaceView {
 
         let working_dir = self.working_dir(&repo);
         let view = cx.entity().clone();
+        let pr_title = message.clone();
 
         window
             .spawn(cx, async move |cx| {
+                // 1. Commit
                 let result = cx
                     .background_executor()
                     .spawn({
@@ -134,6 +136,7 @@ impl WorkspaceView {
                     return;
                 }
 
+                // 2. Push
                 let push_result = cx
                     .background_executor()
                     .spawn({
@@ -142,19 +145,58 @@ impl WorkspaceView {
                     })
                     .await;
 
-                cx.update(|_, cx| {
+                if let Err(e) = push_result {
+                    let repo = repo.clone();
+                    cx.update(|_, cx| {
+                        view.update(cx, |this, cx| {
+                            if let Some(rt) = this.state.runtimes.get_mut(&repo) {
+                                rt.staged_files.clear();
+                                rt.action_phase = ActionPhase::Error(format!("Push: {e}"));
+                            }
+                            cx.notify();
+                        })
+                    })
+                    .ok();
+                    return;
+                }
+
+                // 3. Create PR
+                {
+                    let repo = repo.clone();
+                    let view = view.clone();
+                    cx.update(|_, cx| {
+                        view.update(cx, |this, cx| {
+                            if let Some(rt) = this.state.runtimes.get_mut(&repo) {
+                                rt.staged_files.clear();
+                                rt.action_phase = ActionPhase::Working("Creating PR...".into());
+                            }
+                            cx.notify();
+                        })
+                    })
+                    .ok();
+                }
+
+                let pr_result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = working_dir.clone();
+                        async move { git::create_pr(&dir, &pr_title) }
+                    })
+                    .await;
+
+                cx.update(|window, cx| {
                     view.update(cx, |this, cx| {
                         if let Some(rt) = this.state.runtimes.get_mut(&repo) {
-                            match push_result {
-                                Ok(()) => {
-                                    rt.staged_files.clear();
+                            match pr_result {
+                                Ok(_) => {
                                     rt.action_phase = ActionPhase::Idle;
                                 }
                                 Err(e) => {
-                                    rt.action_phase = ActionPhase::Error(format!("Push: {e}"));
+                                    rt.action_phase = ActionPhase::Error(format!("PR: {e}"));
                                 }
                             }
                         }
+                        this.start_git_poll(repo.clone(), window, cx);
                         cx.notify();
                     })
                 })

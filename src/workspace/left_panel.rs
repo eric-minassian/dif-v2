@@ -10,7 +10,11 @@ use crate::theme::theme;
 use super::WorkspaceView;
 
 impl WorkspaceView {
-    pub(crate) fn render_left_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_left_sidebar(
+        &self,
+        show_session_shortcuts: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let selected_repo = self.state.selected_repo.as_ref();
         let selected_session = self.state.selected_session.as_deref();
 
@@ -28,6 +32,7 @@ impl WorkspaceView {
                 is_selected,
                 is_collapsed,
                 selected_session,
+                show_session_shortcuts,
                 cx,
             ));
         }
@@ -46,6 +51,7 @@ impl WorkspaceView {
         is_selected: bool,
         is_collapsed: bool,
         selected_session: Option<&str>,
+        show_session_shortcuts: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let t = theme();
@@ -202,6 +208,7 @@ impl WorkspaceView {
                     session_index,
                     is_selected,
                     is_session_selected,
+                    show_session_shortcuts,
                     cx,
                 ));
             }
@@ -224,6 +231,7 @@ impl WorkspaceView {
         session_index: usize,
         is_project_selected: bool,
         is_session_selected: bool,
+        show_session_shortcuts: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let t = theme();
@@ -293,8 +301,7 @@ impl WorkspaceView {
                 .into_any_element()
         };
 
-        let show_badge =
-            self.state.cmd_held && is_project_selected && session_index < 9;
+        let show_badge = show_session_shortcuts && is_project_selected && session_index < 9;
 
         div()
             .id(session_row_id)

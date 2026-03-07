@@ -55,6 +55,15 @@ Note: `.cargo/config.toml` sets a custom target dir (`/Users/eric/.cargo-targets
 - `text_input.rs` — `TextInput` view implementing `EntityInputHandler` and `Focusable`
 - `picker.rs` — macOS `osascript` folder picker
 
+### GPUI Reference: Zed Codebase
+
+Zed is the canonical large-scale GPUI codebase and should be used as the reference for best practices. When implementing GPUI patterns (views, elements, actions, focus, rendering), consult the Zed source for idiomatic usage:
+
+- **General GPUI patterns**: https://github.com/zed-industries/zed/tree/main/crates
+- **Terminal implementation** (most relevant to our `terminal_view/`): https://github.com/zed-industries/zed/tree/main/crates/terminal_view/src
+
+Prefer Zed's patterns over inventing new ones — if Zed has an established way to handle focus, keybindings, element rendering, testing, or async work, follow it.
+
 ### GPUI Patterns Used
 
 - All views with focus implement `Focusable` trait

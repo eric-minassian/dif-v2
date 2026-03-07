@@ -96,6 +96,7 @@ pub struct WorkspaceView {
     renaming_session: Option<SessionRename>,
     creating_session: Option<SessionCreate>,
     settings_input: Option<SettingsEdit>,
+    _window_activation_sub: Subscription,
     _git_poll_task: Option<gpui::Task<()>>,
 }
 
@@ -129,6 +130,8 @@ impl WorkspaceView {
 
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window, cx);
+        let window_activation_sub =
+            cx.observe_window_activation(window, Self::on_window_activation_changed);
 
         let mut this = Self {
             state,
@@ -136,6 +139,7 @@ impl WorkspaceView {
             renaming_session: None,
             creating_session: None,
             settings_input: None,
+            _window_activation_sub: window_activation_sub,
             _git_poll_task: None,
         };
         if let Some(repo) = this.state.selected_repo.clone() {
@@ -147,6 +151,10 @@ impl WorkspaceView {
         this.spawn_update_check(window, cx);
 
         this
+    }
+
+    fn on_window_activation_changed(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.notify();
     }
 
     fn worktree_or_repo(&self, repo_root: &Path, session_id: &str) -> PathBuf {
@@ -459,13 +467,14 @@ impl WorkspaceView {
 }
 
 impl Render for WorkspaceView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
+        let show_session_shortcuts = window.modifiers().platform;
 
         let left = if self.state.left_sidebar_collapsed {
             self.render_collapsed_left_sidebar()
         } else {
-            self.render_left_sidebar(cx)
+            self.render_left_sidebar(show_session_shortcuts, cx)
         };
 
         let right = if self.state.right_sidebar_collapsed {
@@ -484,12 +493,8 @@ impl Render for WorkspaceView {
 
         self.register_actions(root, cx)
             .on_modifiers_changed(cx.listener(
-                |this, event: &gpui::ModifiersChangedEvent, _window, cx| {
-                    let new_val = event.modifiers.platform;
-                    if this.state.cmd_held != new_val {
-                        this.state.cmd_held = new_val;
-                        cx.notify();
-                    }
+                |_, _: &gpui::ModifiersChangedEvent, _window, cx| {
+                    cx.notify();
                 },
             ))
             .on_mouse_move(cx.listener(Self::on_resize_drag))

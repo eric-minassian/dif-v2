@@ -1,7 +1,7 @@
 use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton};
 
 use crate::components::{panel, section_header, PanelSide};
-use crate::state::ActionPhase;
+use crate::state::{ActionPhase, BranchStatus, RepoCapabilities};
 use crate::theme::theme;
 
 use super::panel_action::{derive_panel_action, PanelAction};
@@ -33,41 +33,41 @@ impl WorkspaceView {
         let error = snapshot.and_then(|snapshot| snapshot.last_error.as_ref());
         let has_changes = !changes.is_empty();
 
+        let empty_staged = std::collections::HashSet::new();
         let staged_files = project_runtime
             .map(|rt| &rt.staged_files)
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&empty_staged);
         let staged_count = staged_files.len();
+        let default_branch_status = BranchStatus::default();
         let branch_status = project_runtime
             .map(|rt| &rt.branch_status)
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&default_branch_status);
+        let default_action_phase = ActionPhase::default();
         let action_phase = project_runtime
             .map(|rt| &rt.action_phase)
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&default_action_phase);
+        let default_repo_caps = RepoCapabilities::default();
         let repo_capabilities = project_runtime
             .map(|rt| &rt.repo_capabilities)
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&default_repo_caps);
 
-        let panel_action = derive_panel_action(has_changes, staged_count, &branch_status);
+        let panel_action = derive_panel_action(has_changes, staged_count, branch_status);
         let _is_busy = matches!(action_phase, ActionPhase::Working(_));
 
         // Build the action button for the header bar
         let header_action = self.render_header_action_button(
             &panel_action,
-            &action_phase,
-            &branch_status,
-            &repo_capabilities,
+            action_phase,
+            branch_status,
+            repo_capabilities,
             cx,
         );
 
         // Build inline PR link for header
-        let pr_link = self.render_header_pr_link(&branch_status);
+        let pr_link = self.render_header_pr_link(branch_status);
 
         // Build inline CI status icon for header
-        let ci_status = self.render_checks_status_icon(&branch_status, cx);
+        let ci_status = self.render_checks_status_icon(branch_status, cx);
 
         let popover_open =
             self.state.checks_popover_open && !branch_status.checks.is_empty();
@@ -101,7 +101,7 @@ impl WorkspaceView {
                         .px_3()
                         .pt_2()
                         .pb_1()
-                        .child(self.render_action_or_status(&panel_action, &action_phase, header_action, cx)),
+                        .child(self.render_action_or_status(&panel_action, action_phase, header_action, cx)),
                 )
             })
             .when_some(error, |p, message| {
@@ -147,7 +147,7 @@ impl WorkspaceView {
                     } else {
                         changes
                             .iter()
-                            .map(|change| self.render_change_row(change, &staged_files, popover_open, cx))
+                            .map(|change| self.render_change_row(change, staged_files, popover_open, cx))
                             .collect::<Vec<_>>()
                     }),
             );
@@ -166,7 +166,7 @@ impl WorkspaceView {
                         .h(px(10000.))
                         .on_mouse_up(MouseButton::Left, backdrop_listener),
                 )
-                .child(self.render_checks_popover(&branch_status, cx));
+                .child(self.render_checks_popover(branch_status, cx));
         }
 
         panel_div.into_any_element()

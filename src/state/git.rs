@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone, Debug)]
@@ -53,8 +54,8 @@ pub enum SplitLineKind {
 #[derive(Clone, Debug)]
 pub struct DiffData {
     pub file_path: String,
-    pub lines: Vec<SplitLine>,
-    pub display_rows: Vec<DiffDisplayRow>,
+    pub lines: Arc<Vec<SplitLine>>,
+    pub display_rows: Arc<Vec<DiffDisplayRow>>,
     pub expanded_sections: HashSet<usize>,
     pub additions: u32,
     pub deletions: u32,

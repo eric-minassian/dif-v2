@@ -52,21 +52,19 @@ pub(crate) fn apply_git_snapshot(
             let changed = runtime.git_snapshot.changes != *changes
                 || runtime.git_snapshot.last_error.is_some();
 
-            // Collect current file paths from the new snapshot
-            let current_paths: std::collections::HashSet<String> =
-                changes.iter().map(|c| c.path.clone()).collect();
+            // Collect current file paths from the new snapshot (borrow, don't clone)
+            let current_paths: std::collections::HashSet<&str> =
+                changes.iter().map(|c| c.path.as_str()).collect();
 
             // Auto-stage new files that weren't in the previous snapshot
-            let old_paths: std::collections::HashSet<String> =
-                runtime.git_snapshot.changes.iter().map(|c| c.path.clone()).collect();
-            for path in &current_paths {
-                if !old_paths.contains(path) {
-                    runtime.staged_files.insert(path.clone());
+            for change in changes {
+                if !runtime.git_snapshot.changes.iter().any(|old| old.path == change.path) {
+                    runtime.staged_files.insert(change.path.clone());
                 }
             }
 
             // Remove staged paths that no longer appear in changes
-            runtime.staged_files.retain(|p| current_paths.contains(p));
+            runtime.staged_files.retain(|p| current_paths.contains(p.as_str()));
 
             runtime.git_snapshot.changes = changes.clone();
             runtime.git_snapshot.last_error = None;

@@ -84,7 +84,8 @@ impl Element for TerminalTextElement {
         let run_font = style.font();
         let run_color = style.color;
 
-        let cell_width = cell_metrics(window, &font).map(|(w, _)| px(w));
+        let metrics = cell_metrics(window, &font);
+        let cell_width = metrics.map(|(w, _)| px(w));
 
         self.view.update(cx, |view, _cx| {
             if view.viewport_lines.is_empty() {
@@ -191,7 +192,7 @@ impl Element for TerminalTextElement {
         });
 
         let default_bg = { self.view.read(cx).session.default_background() };
-        let background_quads = cell_metrics(window, &font)
+        let background_quads = metrics
             .map(|(cell_width, _)| {
                 let origin = bounds.origin;
                 let mut quads: Vec<PaintQuad> = Vec::new();
@@ -238,12 +239,11 @@ impl Element for TerminalTextElement {
             )
         };
 
-        let (marked_text, cursor_position, font) = {
+        let (marked_text, cursor_position) = {
             let view = self.view.read(cx);
             (
                 view.marked_text.clone(),
                 view.session.cursor_position(),
-                view.font.clone(),
             )
         };
 
@@ -253,7 +253,7 @@ impl Element for TerminalTextElement {
                     return None;
                 }
                 let (col, row) = cursor_position?;
-                let (cell_width, _) = cell_metrics(window, &font)?;
+                let (cell_width, _) = metrics?;
 
                 let origin_x = bounds.left() + px(cell_width * (col.saturating_sub(1)) as f32);
                 let origin_y = bounds.top() + line_height * (row.saturating_sub(1)) as f32;
@@ -364,7 +364,7 @@ impl Element for TerminalTextElement {
             })
             .unwrap_or_default();
 
-        let box_drawing_quads = cell_metrics(window, &font)
+        let box_drawing_quads = metrics
             .map(|(cell_width, _)| {
                 use unicode_width::UnicodeWidthChar as _;
                 let default_fg = run_color;
@@ -450,7 +450,7 @@ impl Element for TerminalTextElement {
             let line = shaped_lines.get(row_index)?;
             let byte_index = byte_index_for_column_in_line(line.text.as_str(), col);
             let x = bounds.left() + line.x_for_index(byte_index.min(line.text.len()));
-            let (cw, _) = cell_metrics(window, &font)?;
+            let (cw, _) = metrics?;
 
             use super::super::CursorShape;
             let (cursor_w, cursor_h, cursor_y) = match cursor_shape {
@@ -491,14 +491,14 @@ impl Element for TerminalTextElement {
         cx: &mut App,
     ) {
         let bounds_changed = self.view.read(cx).last_bounds != Some(bounds);
-        let metrics = cell_metrics(window, &self.view.read(cx).font);
+        let paint_metrics = cell_metrics(window, &self.view.read(cx).font);
         self.view.update(cx, |view, _cx| {
             view.last_bounds = Some(bounds);
-            view.last_cell_metrics = metrics;
+            view.last_cell_metrics = paint_metrics;
         });
 
         if bounds_changed {
-            if let Some((cell_width, cell_height)) = metrics {
+            if let Some((cell_width, cell_height)) = paint_metrics {
                 let cols = (f32::from(bounds.size.width) / cell_width)
                     .floor()
                     .max(1.0) as u16;

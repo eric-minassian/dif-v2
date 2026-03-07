@@ -1,5 +1,7 @@
 use std::collections::HashSet;
+use std::mem;
 use std::path::Path;
+use std::sync::Arc;
 
 use similar::TextDiff;
 
@@ -55,8 +57,8 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
     let mut new_lineno: u32 = 1;
 
     // Highlight both sides
-    let old_highlights = highlight_lines(old, file_path);
-    let new_highlights = highlight_lines(new, file_path);
+    let mut old_highlights = highlight_lines(old, file_path);
+    let mut new_highlights = highlight_lines(new, file_path);
 
     for op in diff.ops() {
         match op {
@@ -64,20 +66,20 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                 old_index, len, ..
             } => {
                 for i in 0..*len {
-                    let text = diff.old_slices()[*old_index + i];
+                    let text = strip_newline(diff.old_slices()[*old_index + i]);
                     let old_runs = old_highlights
-                        .get((old_lineno - 1) as usize)
-                        .cloned()
+                        .get_mut((old_lineno - 1) as usize)
+                        .map(mem::take)
                         .unwrap_or_default();
                     let new_runs = new_highlights
-                        .get((new_lineno - 1) as usize)
-                        .cloned()
+                        .get_mut((new_lineno - 1) as usize)
+                        .map(mem::take)
                         .unwrap_or_default();
                     lines.push(SplitLine {
                         old_lineno: Some(old_lineno),
                         new_lineno: Some(new_lineno),
-                        old_text: strip_newline(text),
-                        new_text: strip_newline(text),
+                        old_text: text.to_string(),
+                        new_text: text.to_string(),
                         kind: SplitLineKind::Equal,
                         old_syntax_runs: old_runs,
                         new_syntax_runs: new_runs,
@@ -92,13 +94,13 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                 for i in 0..*old_len {
                     let text = diff.old_slices()[*old_index + i];
                     let old_runs = old_highlights
-                        .get((old_lineno - 1) as usize)
-                        .cloned()
+                        .get_mut((old_lineno - 1) as usize)
+                        .map(mem::take)
                         .unwrap_or_default();
                     lines.push(SplitLine {
                         old_lineno: Some(old_lineno),
                         new_lineno: None,
-                        old_text: strip_newline(text),
+                        old_text: strip_newline(text).to_string(),
                         new_text: String::new(),
                         kind: SplitLineKind::Delete,
                         old_syntax_runs: old_runs,
@@ -114,14 +116,14 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                 for i in 0..*new_len {
                     let text = diff.new_slices()[*new_index + i];
                     let new_runs = new_highlights
-                        .get((new_lineno - 1) as usize)
-                        .cloned()
+                        .get_mut((new_lineno - 1) as usize)
+                        .map(mem::take)
                         .unwrap_or_default();
                     lines.push(SplitLine {
                         old_lineno: None,
                         new_lineno: Some(new_lineno),
                         old_text: String::new(),
-                        new_text: strip_newline(text),
+                        new_text: strip_newline(text).to_string(),
                         kind: SplitLineKind::Insert,
                         old_syntax_runs: Vec::new(),
                         new_syntax_runs: new_runs,
@@ -141,27 +143,27 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
                     let has_old = i < *old_len;
                     let has_new = i < *new_len;
                     let old_text = if has_old {
-                        strip_newline(diff.old_slices()[*old_index + i])
+                        strip_newline(diff.old_slices()[*old_index + i]).to_string()
                     } else {
                         String::new()
                     };
                     let new_text = if has_new {
-                        strip_newline(diff.new_slices()[*new_index + i])
+                        strip_newline(diff.new_slices()[*new_index + i]).to_string()
                     } else {
                         String::new()
                     };
                     let old_runs = if has_old {
                         old_highlights
-                            .get((old_lineno - 1) as usize)
-                            .cloned()
+                            .get_mut((old_lineno - 1) as usize)
+                            .map(mem::take)
                             .unwrap_or_default()
                     } else {
                         Vec::new()
                     };
                     let new_runs = if has_new {
                         new_highlights
-                            .get((new_lineno - 1) as usize)
-                            .cloned()
+                            .get_mut((new_lineno - 1) as usize)
+                            .map(mem::take)
                             .unwrap_or_default()
                     } else {
                         Vec::new()
@@ -202,8 +204,8 @@ pub(crate) fn build_split_diff(file_path: &str, old: &str, new: &str) -> DiffDat
 
     DiffData {
         file_path: file_path.to_string(),
-        lines,
-        display_rows,
+        lines: Arc::new(lines),
+        display_rows: Arc::new(display_rows),
         expanded_sections: HashSet::new(),
         additions,
         deletions,
@@ -272,9 +274,8 @@ pub(crate) fn build_display_rows(
     rows
 }
 
-fn strip_newline(s: &str) -> String {
+fn strip_newline(s: &str) -> &str {
     s.strip_suffix('\n')
         .or_else(|| s.strip_suffix("\r\n"))
         .unwrap_or(s)
-        .to_string()
 }

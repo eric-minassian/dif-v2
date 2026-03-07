@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/eric-minassian/dif-v2/compare/v0.13.0...v0.14.0) (2026-03-07)
+
+
+### Features
+
+* collapsible terminal ([947c194](https://github.com/eric-minassian/dif-v2/commit/947c1948d717e2be9c784cef41197fb8169c023c))
+
 ## [0.13.0](https://github.com/eric-minassian/dif-v2/compare/v0.12.0...v0.13.0) (2026-03-07)
 
 

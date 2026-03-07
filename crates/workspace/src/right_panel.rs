@@ -1,10 +1,8 @@
-use crate::runtime::ActionPhase;
-use git::{BranchStatus, RepoCapabilities};
+use git::BranchStatus;
 use ui::prelude::*;
-use ui::{PanelSide, panel, section_header};
+use ui::{PanelSide, panel};
 
 use crate::WorkspaceView;
-use crate::panel_action::{PanelAction, derive_panel_action};
 
 impl WorkspaceView {
     pub(crate) fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -30,76 +28,21 @@ impl WorkspaceView {
             .map(|snapshot| snapshot.changes.as_slice())
             .unwrap_or(&[]);
         let error = snapshot.and_then(|snapshot| snapshot.last_error.as_ref());
-        let has_changes = !changes.is_empty();
 
         let empty_staged = std::collections::HashSet::new();
         let staged_files = project_runtime
             .map(|rt| &rt.staged_files)
             .unwrap_or(&empty_staged);
-        let staged_count = staged_files.len();
         let default_branch_status = BranchStatus::default();
         let branch_status = project_runtime
             .map(|rt| &rt.branch_status)
             .unwrap_or(&default_branch_status);
-        let default_action_phase = ActionPhase::default();
-        let action_phase = project_runtime
-            .map(|rt| &rt.action_phase)
-            .unwrap_or(&default_action_phase);
-        let default_repo_caps = RepoCapabilities::default();
-        let repo_capabilities = project_runtime
-            .map(|rt| &rt.repo_capabilities)
-            .unwrap_or(&default_repo_caps);
 
-        let panel_action = derive_panel_action(has_changes, staged_count, branch_status);
-        let _is_busy = matches!(action_phase, ActionPhase::Working(_));
-
-        // Build the action button for the header bar
-        let header_action = self.render_header_action_button(
-            &panel_action,
-            action_phase,
-            branch_status,
-            repo_capabilities,
-            cx,
-        );
-
-        // Build inline PR link for header
-        let pr_link = self.render_header_pr_link(branch_status);
-
-        // Build inline CI status icon for header
-        let ci_status = self.render_checks_status_icon(branch_status, cx);
-
-        let popover_open = self.state.checks_popover_open && !branch_status.checks.is_empty();
-        let backdrop_listener = cx.listener(|this, _event: &gpui::MouseUpEvent, _window, cx| {
-            this.on_close_checks_popover(cx);
-        });
-
-        let mut panel_div = v_flex()
-            .relative()
+        v_flex()
             .flex_1()
             .min_h_0()
             .border_b_1()
             .border_color(t.border_default)
-            .child(
-                section_header("Changes").child(h_flex().gap_2().child(ci_status).child(pr_link)),
-            )
-            // Full-width primary action button / status
-            .when(
-                panel_action != PanelAction::None || !matches!(action_phase, ActionPhase::Idle),
-                |el| {
-                    el.child(
-                        div()
-                            .px_3()
-                            .pt_2()
-                            .pb_1()
-                            .child(self.render_action_or_status(
-                                &panel_action,
-                                action_phase,
-                                header_action,
-                                cx,
-                            )),
-                    )
-                },
-            )
             .when_some(error, |p, message| {
                 p.child(
                     div()
@@ -145,30 +88,10 @@ impl WorkspaceView {
                     } else {
                         changes
                             .iter()
-                            .map(|change| {
-                                self.render_change_row(change, staged_files, popover_open, cx)
-                            })
+                            .map(|change| self.render_change_row(change, staged_files, false, cx))
                             .collect::<Vec<_>>()
                     }),
-            );
-
-        // Backdrop + popover rendered as last children so they paint on top
-        if popover_open {
-            panel_div = panel_div
-                .child(
-                    div()
-                        .id("checks-backdrop")
-                        .occlude()
-                        .absolute()
-                        .top(px(-2000.))
-                        .left(px(-2000.))
-                        .w(px(10000.))
-                        .h(px(10000.))
-                        .on_mouse_up(MouseButton::Left, backdrop_listener),
-                )
-                .child(self.render_checks_popover(branch_status, cx));
-        }
-
-        panel_div.into_any_element()
+            )
+            .into_any_element()
     }
 }

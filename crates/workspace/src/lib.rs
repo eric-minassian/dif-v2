@@ -483,9 +483,19 @@ impl Render for WorkspaceView {
         let left_collapsed = self.state.left_sidebar_collapsed;
         let right_collapsed = self.state.right_sidebar_collapsed;
 
+        // Compute checks popover state (clone to avoid borrow conflicts)
+        let popover_branch_status = self
+            .selected_project_runtime()
+            .map(|rt| rt.branch_status.clone());
+        let checks_popover_open = self.state.checks_popover_open
+            && popover_branch_status
+                .as_ref()
+                .map_or(false, |bs| !bs.checks.is_empty());
+
         let root = div().id("workspace").track_focus(&self.focus_handle);
 
-        self.register_actions(root, cx)
+        let mut el = self
+            .register_actions(root, cx)
             .on_modifiers_changed(
                 cx.listener(|_, _: &gpui::ModifiersChangedEvent, _window, cx| {
                     cx.notify();
@@ -494,6 +504,7 @@ impl Render for WorkspaceView {
             .on_mouse_move(cx.listener(Self::on_resize_drag))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_resize_end))
             .when(is_resizing, |el| el.cursor(CursorStyle::ResizeLeftRight))
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -515,6 +526,30 @@ impl Render for WorkspaceView {
                         el.child(resize_handle("right-resize", cx, ResizingSidebar::Right))
                     })
                     .child(right),
-            )
+            );
+
+        // Checks popover rendered at workspace root for proper z-ordering
+        if checks_popover_open {
+            if let Some(ref bs) = popover_branch_status {
+                let backdrop_listener =
+                    cx.listener(|this, _event: &gpui::MouseUpEvent, _window, cx| {
+                        this.on_close_checks_popover(cx);
+                    });
+                el = el
+                    .child(
+                        div()
+                            .id("checks-backdrop")
+                            .occlude()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .size_full()
+                            .on_mouse_up(MouseButton::Left, backdrop_listener),
+                    )
+                    .child(self.render_checks_popover(bs, cx));
+            }
+        }
+
+        el
     }
 }

@@ -1,5 +1,4 @@
-use gpui::{Context, Window};
-
+use crate::prelude::*;
 use crate::state::UpdateStatus;
 use crate::updater;
 

@@ -1,10 +1,9 @@
-use gpui::{AnyElement, Context, Focusable, MouseButton, Window, div, prelude::*};
+use gpui::Focusable;
 
 use crate::components::empty_state;
-use crate::icons::{icon_plus, icon_x};
+use crate::prelude::*;
 use crate::state::{SessionRuntime, TerminalTab};
 use crate::terminal;
-use crate::theme::theme;
 
 use super::WorkspaceView;
 
@@ -146,11 +145,9 @@ impl WorkspaceView {
                 empty_state("No terminal selected.").into_any_element()
             };
 
-        div()
+        v_flex()
             .flex_1()
             .min_h_0()
-            .flex()
-            .flex_col()
             .child(tab_bar)
             .child(terminal_content)
             .into_any_element()
@@ -164,9 +161,7 @@ impl WorkspaceView {
         let t = theme();
         let selected_id = session_runtime.selected_side_tab.as_ref();
 
-        div()
-            .flex()
-            .items_center()
+        h_flex()
             .gap_1()
             .px_2()
             .py_1()
@@ -177,11 +172,10 @@ impl WorkspaceView {
                 let is_selected = selected_id.is_some_and(|s| s == &tab.id);
                 let select_tab_id = tab.id.clone();
                 let delete_tab_id = tab.id.clone();
+                let select_btn_id = gpui::ElementId::Name(format!("sel-tab-{}", tab.id).into());
 
-                div()
+                h_flex()
                     .group("tab-item")
-                    .flex()
-                    .items_center()
                     .gap_1()
                     .px_2()
                     .py_1()
@@ -198,6 +192,7 @@ impl WorkspaceView {
                     })
                     .child(
                         div()
+                            .id(select_btn_id)
                             .cursor_pointer()
                             .text_xs()
                             .text_color(if is_selected {
@@ -205,28 +200,21 @@ impl WorkspaceView {
                             } else {
                                 t.text_muted
                             })
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |this, _event, _window, cx| {
-                                    this.on_select_side_tab(select_tab_id.clone(), cx);
-                                }),
-                            )
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.on_select_side_tab(select_tab_id.clone(), cx);
+                            }))
                             .child(format!("Terminal {}", tab.id)),
                     )
                     .child(
-                        div()
-                            .cursor_pointer()
-                            .text_color(t.text_dim)
-                            .invisible()
-                            .group_hover("tab-item", |style| style.visible())
-                            .hover(|style| style.text_color(t.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |this, _event, _window, cx| {
-                                    this.on_delete_side_tab(delete_tab_id.clone(), cx);
-                                }),
-                            )
-                            .child(icon_x().size_3().text_color(t.text_dim)),
+                        IconButton::new(
+                            gpui::ElementId::Name(format!("close-tab-{}", tab.id).into()),
+                            IconName::X,
+                        )
+                        .icon_size(px(12.))
+                        .visible_on_hover("tab-item")
+                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                            this.on_delete_side_tab(delete_tab_id.clone(), cx);
+                        })),
                     )
             }))
             .child(
@@ -238,13 +226,10 @@ impl WorkspaceView {
                     .rounded_sm()
                     .text_color(t.text_dim)
                     .hover(|style| style.bg(t.hover_overlay).text_color(t.text_muted))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _event, window, cx| {
-                            this.on_add_side_tab(window, cx);
-                        }),
-                    )
-                    .child(icon_plus().size_3p5().text_color(t.text_dim)),
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.on_add_side_tab(window, cx);
+                    }))
+                    .child(Icon::new(IconName::Plus).size(px(14.)).color(Color::Dim)),
             )
             .into_any_element()
     }

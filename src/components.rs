@@ -1,6 +1,6 @@
-use gpui::{Div, div, prelude::*, px};
+use gpui::{Div, px};
 
-use crate::theme::theme;
+use crate::prelude::*;
 
 pub enum PanelSide {
     Left,
@@ -20,9 +20,7 @@ pub fn button() -> Div {
 
 pub fn section_header(title: &str) -> Div {
     let t = theme();
-    div()
-        .flex()
-        .items_center()
+    h_flex()
         .justify_between()
         .px_3()
         .py_2()
@@ -39,7 +37,7 @@ pub fn section_header(title: &str) -> Div {
 
 pub fn panel(side: PanelSide) -> Div {
     let t = theme();
-    let base = div().h_full().flex().flex_col();
+    let base = v_flex().h_full();
     match side {
         PanelSide::Left => base
             .bg(t.bg_panel)

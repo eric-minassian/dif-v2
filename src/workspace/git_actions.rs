@@ -1,7 +1,6 @@
-use gpui::{Context, Window};
-
 use crate::git;
 use crate::git::conventional::is_conventional_commit;
+use crate::prelude::*;
 use crate::state::{ActionPhase, CheckBucket};
 
 use super::panel_action::{derive_panel_action, PanelAction};

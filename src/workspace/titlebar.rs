@@ -1,8 +1,5 @@
-use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px};
-
-use crate::icons::{icon_panel_left, icon_panel_right};
+use crate::prelude::*;
 use crate::state::UpdateStatus;
-use crate::theme::theme;
 
 use super::WorkspaceView;
 
@@ -16,10 +13,8 @@ impl WorkspaceView {
             } => {
                 let url = download_url.clone();
                 Some(
-                    div()
+                    h_flex()
                         .id("update-available")
-                        .flex()
-                        .items_center()
                         .gap_1()
                         .px_2()
                         .py_1()
@@ -27,12 +22,9 @@ impl WorkspaceView {
                         .text_xs()
                         .text_color(t.accent_green)
                         .hover(|style| style.cursor_pointer().bg(t.hover_overlay))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, window, cx| {
-                                this.on_start_update(url.clone(), window, cx);
-                            }),
-                        )
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.on_start_update(url.clone(), window, cx);
+                        }))
                         .child(format!("Update {version}"))
                         .into_any_element(),
                 )
@@ -57,12 +49,9 @@ impl WorkspaceView {
                         .text_xs()
                         .text_color(t.accent_red)
                         .hover(|style| style.cursor_pointer().bg(t.hover_overlay))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _, window, cx| {
-                                this.spawn_update_check(window, cx);
-                            }),
-                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.spawn_update_check(window, cx);
+                        }))
                         .child("Update failed - retry")
                         .into_any_element(),
                 )
@@ -76,7 +65,6 @@ impl WorkspaceView {
         let left_collapsed = self.state.left_sidebar_collapsed;
         let right_collapsed = self.state.right_sidebar_collapsed;
 
-        // Resolve project display name and branch for center context
         let project_name = self
             .state
             .selected_repo
@@ -93,20 +81,16 @@ impl WorkspaceView {
             .selected_project_runtime()
             .and_then(|rt| rt.branch_status.branch_name.clone());
 
-        div()
+        h_flex()
             .h(px(36.))
             .flex_shrink_0()
-            .flex()
-            .items_center()
             .justify_between()
             .bg(t.bg_titlebar)
             .border_b_1()
             .border_color(t.border_subtle)
             // Left side: traffic light padding + sidebar toggle
             .child(
-                div()
-                    .flex()
-                    .items_center()
+                h_flex()
                     .pl(px(78.))
                     .child(
                         div()
@@ -116,30 +100,25 @@ impl WorkspaceView {
                             .rounded_sm()
                             .cursor_pointer()
                             .hover(|style| style.bg(t.hover_overlay))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _window, cx| {
-                                    this.on_toggle_left_sidebar(cx);
-                                }),
-                            )
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.on_toggle_left_sidebar(cx);
+                            }))
                             .child(
-                                icon_panel_left()
-                                    .size_3p5()
-                                    .text_color(if left_collapsed {
+                                Icon::new(IconName::PanelLeft)
+                                    .size(px(14.))
+                                    .color(if left_collapsed {
                                         t.text_dim
                                     } else {
                                         t.text_muted
-                                    })
+                                    }),
                             ),
                     ),
             )
             // Center: project name / branch
             .child(
-                div()
+                h_flex()
                     .flex_1()
-                    .flex()
                     .justify_center()
-                    .items_center()
                     .gap(px(4.))
                     .overflow_hidden()
                     .text_xs()
@@ -165,9 +144,7 @@ impl WorkspaceView {
             )
             // Right side: update indicator + sidebar toggle
             .child(
-                div()
-                    .flex()
-                    .items_center()
+                h_flex()
                     .gap_1()
                     .pr_2()
                     .children(self.render_update_indicator(cx))
@@ -179,20 +156,17 @@ impl WorkspaceView {
                             .rounded_sm()
                             .cursor_pointer()
                             .hover(|style| style.bg(t.hover_overlay))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _window, cx| {
-                                    this.on_toggle_right_sidebar(cx);
-                                }),
-                            )
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.on_toggle_right_sidebar(cx);
+                            }))
                             .child(
-                                icon_panel_right()
-                                    .size_3p5()
-                                    .text_color(if right_collapsed {
+                                Icon::new(IconName::PanelRight)
+                                    .size(px(14.))
+                                    .color(if right_collapsed {
                                         t.text_dim
                                     } else {
                                         t.text_muted
-                                    })
+                                    }),
                             ),
                     ),
             )

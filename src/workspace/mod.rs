@@ -19,12 +19,12 @@ mod update_actions;
 use std::path::{Path, PathBuf};
 
 use gpui::{
-    actions, AnyElement, App, Context, CursorStyle, Entity, FocusHandle, Focusable, MouseButton,
-    Subscription, Window, div, prelude::*,
+    actions, App, CursorStyle, Entity, FocusHandle, Focusable, MouseButton,
+    Subscription,
 };
 
 use crate::components::empty_state;
-use crate::icons::icon_x;
+use crate::prelude::*;
 use crate::state::{
     AppConfig, AppState, ProjectRuntime, ResizingSidebar, SessionRuntime, TerminalTab,
     DEFAULT_LEFT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH,
@@ -32,7 +32,6 @@ use crate::state::{
 use crate::storage;
 use crate::terminal;
 use crate::text_input::TextInput;
-use crate::theme::theme;
 
 use helpers::{pick_initial_selection, pick_initial_session, refresh_project_validity, resize_handle};
 
@@ -305,14 +304,12 @@ impl WorkspaceView {
     fn flash_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let t = theme();
         self.state.flash_error.as_ref().map(|message| {
-            div()
+            h_flex()
                 .id("flash-banner")
                 .w_full()
                 .px_3()
                 .py_2()
                 .bg(t.error_bg)
-                .flex()
-                .items_center()
                 .justify_between()
                 .child(
                     div()
@@ -329,14 +326,11 @@ impl WorkspaceView {
                         .px_1()
                         .text_color(t.text_dim)
                         .hover(|s| s.text_color(t.text_primary))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _event, _window, cx| {
-                                this.state.flash_error = None;
-                                cx.notify();
-                            }),
-                        )
-                        .child(icon_x().size_3p5().text_color(t.text_dim)),
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.state.flash_error = None;
+                            cx.notify();
+                        }))
+                        .child(Icon::new(IconName::X).size(px(14.)).color(Color::Dim)),
                 )
                 .into_any_element()
         })

@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use gpui::{Context, Window};
-
 use crate::git;
+use crate::prelude::*;
 use crate::state::ProjectRuntime;
 
 use super::helpers::apply_git_snapshot;

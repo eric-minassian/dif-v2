@@ -2,15 +2,14 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, Context, FontStyle, FontWeight, HighlightStyle, MouseButton, MouseUpEvent,
-    SharedString, StyledText, Window, div, prelude::*, px, uniform_list,
+    FontStyle, FontWeight, HighlightStyle,
+    StyledText, uniform_list,
 };
 
 use crate::git;
 use crate::git::diff::build_display_rows;
-use crate::icons::icon_x;
+use crate::prelude::*;
 use crate::state::{DiffData, DiffDisplayRow, SplitLine, SplitLineKind, SyntaxRun};
-use crate::theme::theme;
 
 use super::WorkspaceView;
 
@@ -19,7 +18,6 @@ impl WorkspaceView {
         &mut self,
         file_path: String,
         status_code: String,
-        _event: &MouseUpEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -89,9 +87,7 @@ impl WorkspaceView {
     ) -> AnyElement {
         let t = theme();
 
-        let header = div()
-            .flex()
-            .items_center()
+        let header = h_flex()
             .justify_between()
             .px_3()
             .py(px(6.))
@@ -106,13 +102,10 @@ impl WorkspaceView {
                     ),
                     None => (None, diff_data.file_path.clone()),
                 };
-                div()
-                    .flex()
-                    .items_center()
+                h_flex()
                     .gap_2()
                     .child(
-                        div()
-                            .flex()
+                        h_flex()
                             .text_sm()
                             .when_some(dir_part, |el, dir| {
                                 el.child(
@@ -128,16 +121,9 @@ impl WorkspaceView {
                             ),
                     )
                     .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.accent_green)
-                            .child(format!("+{}", diff_data.additions)),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.accent_red)
-                            .child(format!("-{}", diff_data.deletions)),
+                        DiffStat::new()
+                            .additions(diff_data.additions)
+                            .deletions(diff_data.deletions),
                     )
             })
             .child(
@@ -151,16 +137,13 @@ impl WorkspaceView {
                     .bg(t.bg_elevated)
                     .text_color(t.text_muted)
                     .hover(|style| style.bg(t.bg_elevated_hover).text_color(t.text_primary))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _event, _window, cx| {
-                            this.on_close_diff(cx);
-                        }),
-                    )
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.on_close_diff(cx);
+                    }))
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(icon_x().size_3().text_color(t.text_muted))
+                    .child(Icon::new(IconName::X).size(px(12.)).color(Color::Muted))
                     .child("Esc"),
             );
 
@@ -205,12 +188,10 @@ impl WorkspaceView {
         .min_h_0()
         .bg(t.bg_base);
 
-        div()
+        v_flex()
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .flex()
-            .flex_col()
             .child(header)
             .child(diff_list)
             .into_any_element()
@@ -283,17 +264,15 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
         StyledText::new(SharedString::from(line.new_text.clone()))
     };
 
-    div()
-        .flex()
+    h_flex()
         .w_full()
         .text_xs()
         .whitespace_nowrap()
         .child(
             // Left half (old)
-            div()
+            h_flex()
                 .flex_1()
                 .min_w_0()
-                .flex()
                 .overflow_hidden()
                 .bg(left_bg)
                 .child(
@@ -327,10 +306,9 @@ fn render_split_line(line: &SplitLine) -> AnyElement {
         )
         .child(
             // Right half (new)
-            div()
+            h_flex()
                 .flex_1()
                 .min_w_0()
-                .flex()
                 .overflow_hidden()
                 .bg(right_bg)
                 .child(
@@ -380,7 +358,7 @@ fn render_collapsed_separator(
         .bg(t.diff_collapsed_bg)
         .text_color(t.diff_collapsed_text)
         .hover(|style| style.bg(t.diff_collapsed_hover))
-        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+        .on_click(move |_event, _window, cx| {
             entity.update(cx, |this, cx| {
                 this.on_expand_diff_section(start_index, cx);
             });
@@ -408,7 +386,7 @@ fn render_expanded_header(
         .bg(t.diff_collapsed_bg)
         .text_color(t.diff_collapsed_text)
         .hover(|style| style.bg(t.diff_collapsed_hover))
-        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+        .on_click(move |_event, _window, cx| {
             entity.update(cx, |this, cx| {
                 this.on_collapse_diff_section(start_index, cx);
             });

@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
-use gpui::{Context, MouseUpEvent, Window};
-
 use crate::git;
 use crate::picker;
+use crate::prelude::*;
 use crate::state::SavedProject;
 
 use super::helpers::{pick_initial_selection, pick_initial_session};
@@ -12,7 +11,6 @@ use super::WorkspaceView;
 impl WorkspaceView {
     pub(crate) fn on_add_project(
         &mut self,
-        _: &MouseUpEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -26,8 +24,6 @@ impl WorkspaceView {
     pub(crate) fn on_remove_project(
         &mut self,
         repo_root: PathBuf,
-        _event: &MouseUpEvent,
-        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         // Collect worktree paths before removing the project
@@ -78,7 +74,6 @@ impl WorkspaceView {
     pub(crate) fn on_select_project(
         &mut self,
         repo_root: PathBuf,
-        _event: &MouseUpEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -135,8 +130,6 @@ impl WorkspaceView {
     pub(crate) fn on_toggle_project_collapse(
         &mut self,
         repo_root: PathBuf,
-        _event: &MouseUpEvent,
-        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.state.collapsed_projects.contains(&repo_root) {

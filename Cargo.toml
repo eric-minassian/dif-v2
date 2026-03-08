@@ -30,6 +30,7 @@ tempfile = "3.15"
 name = "dif"
 version.workspace = true
 edition.workspace = true
+default-run = "dif"
 
 [features]
 visual-tests = [

@@ -389,7 +389,16 @@ impl WorkspaceView {
             .iter_mut()
             .find(|p| p.repo_root == repo_root)
         {
-            project.last_selected_session = Some(session_id);
+            project.last_selected_session = Some(session_id.clone());
+        }
+
+        // Focus the new session's main terminal so key events
+        // (including modifiers_changed) continue to dispatch properly.
+        if let Some(runtime) = self.state.runtimes.get(&repo_root)
+            && let Some(session_rt) = runtime.session_runtimes.get(&session_id)
+            && let Some(terminal) = &session_rt.main_terminal
+        {
+            terminal.focus_handle(cx).focus(window, cx);
         }
 
         self.persist_config();

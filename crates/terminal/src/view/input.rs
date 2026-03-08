@@ -168,6 +168,7 @@ impl TerminalView {
         let keystroke = raw_keystroke.clone().with_simulated_ime();
 
         if keystroke.modifiers.platform || keystroke.modifiers.function {
+            cx.propagate();
             return;
         }
 

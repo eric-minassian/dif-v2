@@ -28,8 +28,8 @@ impl WorkspaceView {
                     .background_executor()
                     .spawn(async move { git::collect_changes(&dir) });
 
-                // Every 5th tick (~10s) or on first tick, also collect branch status
-                // and repo capabilities — spawn concurrently with collect_changes
+                // Every 5th tick (~10s), collect branch status (PR info + CI checks).
+                // Repo capabilities rarely change — refresh every 150th tick (~5 min).
                 let status_task = if tick.is_multiple_of(5) {
                     let dir = git_dir.clone();
                     Some(
@@ -39,7 +39,7 @@ impl WorkspaceView {
                 } else {
                     None
                 };
-                let caps_task = if tick.is_multiple_of(5) {
+                let caps_task = if tick.is_multiple_of(150) {
                     let dir = git_dir.clone();
                     Some(
                         cx.background_executor()
@@ -76,14 +76,17 @@ impl WorkspaceView {
                     break;
                 }
 
-                // Then wait for slow network tasks and update UI again
-                if let Some(status_task) = status_task {
-                    let branch_status = status_task.await;
-                    let repo_caps = match caps_task {
-                        Some(t) => Some(t.await),
-                        None => None,
-                    };
+                // Wait for network tasks (if any) and update UI
+                let branch_status = match status_task {
+                    Some(t) => Some(t.await),
+                    None => None,
+                };
+                let repo_caps = match caps_task {
+                    Some(t) => Some(t.await),
+                    None => None,
+                };
 
+                if branch_status.is_some() || repo_caps.is_some() {
                     let still_running = cx
                         .update(|_, cx| {
                             view.update(cx, |this, cx| {
@@ -100,12 +103,14 @@ impl WorkspaceView {
                                     .or_insert_with(ProjectRuntime::default);
 
                                 let mut changed = false;
-                                if runtime.branch_status != branch_status {
-                                    if runtime.branch_status.checks != branch_status.checks {
-                                        this.state.checks_popover_open = false;
+                                if let Some(status) = branch_status {
+                                    if runtime.branch_status != status {
+                                        if runtime.branch_status.checks != status.checks {
+                                            this.state.checks_popover_open = false;
+                                        }
+                                        runtime.branch_status = status;
+                                        changed = true;
                                     }
-                                    runtime.branch_status = branch_status;
-                                    changed = true;
                                 }
                                 if let Some(caps) = repo_caps
                                     && runtime.repo_capabilities != caps

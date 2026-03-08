@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.3](https://github.com/eric-minassian/dif-v2/compare/v0.15.2...v0.15.3) (2026-03-08)
+
+
+### Bug Fixes
+
+* async delete sessions ([3795d25](https://github.com/eric-minassian/dif-v2/commit/3795d257e86e1f2c2aa1a21232915eb4b0ee942a))
+
 ## [0.15.2](https://github.com/eric-minassian/dif-v2/compare/v0.15.1...v0.15.2) (2026-03-08)
 
 

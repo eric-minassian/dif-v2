@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/eric-minassian/dif-v2/compare/v0.15.1...v0.15.2) (2026-03-08)
+
+
+### Bug Fixes
+
+* worktree config ([6dd03e5](https://github.com/eric-minassian/dif-v2/commit/6dd03e58429dcd59cfb7b28ecf8be95a694312a6))
+
 ## [0.15.1](https://github.com/eric-minassian/dif-v2/compare/v0.15.0...v0.15.1) (2026-03-08)
 
 

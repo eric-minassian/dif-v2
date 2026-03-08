@@ -57,6 +57,15 @@ pub enum TextInputEvent {
     Cancel,
 }
 
+/// Stored layout info for wrapped text, used by mouse/IME handlers.
+struct WrappedLayout {
+    lines: Vec<ShapedLine>,
+    /// Byte offset in the original text where each visual line starts.
+    byte_offsets: Vec<usize>,
+    bounds: Bounds<Pixels>,
+    line_height: Pixels,
+}
+
 pub struct TextInput {
     focus_handle: FocusHandle,
     content: SharedString,
@@ -65,7 +74,11 @@ pub struct TextInput {
     marked_range: Option<Range<usize>>,
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
+    scroll_offset: Pixels,
     is_selecting: bool,
+    wrap: bool,
+    wrapped_line_count: usize,
+    last_wrapped: Option<WrappedLayout>,
 }
 
 impl gpui::EventEmitter<TextInputEvent> for TextInput {}
@@ -83,8 +96,19 @@ impl TextInput {
             marked_range: None,
             last_layout: None,
             last_bounds: None,
+            scroll_offset: px(0.),
             is_selecting: false,
+            wrap: false,
+            wrapped_line_count: 1,
+            last_wrapped: None,
         }
+    }
+
+    /// Enable text wrapping (multiline display). The input remains logically
+    /// single-line (no newlines) but wraps visually at the container width.
+    pub fn wrapping(mut self) -> Self {
+        self.wrap = true;
+        self
     }
 
     pub fn text(&self) -> &str {
@@ -215,6 +239,24 @@ impl TextInput {
         if self.content.is_empty() {
             return 0;
         }
+
+        // Wrapped mode: use wrapped layout
+        if let Some(wrapped) = &self.last_wrapped {
+            if position.y < wrapped.bounds.top() {
+                return 0;
+            }
+            if position.y > wrapped.bounds.bottom() {
+                return self.content.len();
+            }
+            let relative_y = position.y - wrapped.bounds.top();
+            let line_idx =
+                ((relative_y / wrapped.line_height) as usize).min(wrapped.lines.len() - 1);
+            let local_idx =
+                wrapped.lines[line_idx].closest_index_for_x(position.x - wrapped.bounds.left());
+            return wrapped.byte_offsets[line_idx] + local_idx;
+        }
+
+        // Single-line mode
         let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref())
         else {
             return 0;
@@ -225,7 +267,7 @@ impl TextInput {
         if position.y > bounds.bottom() {
             return self.content.len();
         }
-        line.closest_index_for_x(position.x - bounds.left())
+        line.closest_index_for_x(position.x - bounds.left() + self.scroll_offset)
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -288,6 +330,20 @@ impl TextInput {
             .grapheme_indices(true)
             .find_map(|(idx, _)| (idx > offset).then_some(idx))
             .unwrap_or(self.content.len())
+    }
+
+    /// Given a byte index, find which visual line it's on and its x-offset
+    /// within that line. Returns `(line_index, x_position)`.
+    fn wrapped_cursor_position(&self, byte_index: usize) -> Option<(usize, Pixels)> {
+        let wrapped = self.last_wrapped.as_ref()?;
+        let line_idx = wrapped
+            .byte_offsets
+            .iter()
+            .rposition(|&off| off <= byte_index)
+            .unwrap_or(0);
+        let local = byte_index - wrapped.byte_offsets[line_idx];
+        let x = wrapped.lines[line_idx].x_for_index(local);
+        Some((line_idx, x))
     }
 }
 
@@ -389,15 +445,29 @@ impl EntityInputHandler for TextInput {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let last_layout = self.last_layout.as_ref()?;
         let range = self.range_from_utf16(&range_utf16);
+
+        if let Some((line_idx, x)) = self.wrapped_cursor_position(range.start) {
+            let wrapped = self.last_wrapped.as_ref()?;
+            let (_end_line, end_x) = self
+                .wrapped_cursor_position(range.end)
+                .unwrap_or((line_idx, x));
+            // Return bounds on the start line (good enough for IME positioning)
+            let y = bounds.top() + wrapped.line_height * line_idx as f32;
+            return Some(Bounds::from_corners(
+                point(bounds.left() + x, y),
+                point(bounds.left() + end_x, y + wrapped.line_height),
+            ));
+        }
+
+        let last_layout = self.last_layout.as_ref()?;
         Some(Bounds::from_corners(
             point(
-                bounds.left() + last_layout.x_for_index(range.start),
+                bounds.left() + last_layout.x_for_index(range.start) - self.scroll_offset,
                 bounds.top(),
             ),
             point(
-                bounds.left() + last_layout.x_for_index(range.end),
+                bounds.left() + last_layout.x_for_index(range.end) - self.scroll_offset,
                 bounds.bottom(),
             ),
         ))
@@ -409,22 +479,94 @@ impl EntityInputHandler for TextInput {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
+        if let Some(wrapped) = &self.last_wrapped {
+            let relative_y = point.y - wrapped.bounds.top();
+            let line_idx = (relative_y / wrapped.line_height) as usize;
+            let local_x = point.x - wrapped.bounds.left();
+            let utf8_index = wrapped.lines[line_idx].index_for_x(local_x)?;
+            return Some(self.offset_to_utf16(wrapped.byte_offsets[line_idx] + utf8_index));
+        }
+
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
-        let utf8_index = last_layout.index_for_x(point.x - line_point.x)?;
+        let utf8_index = last_layout.index_for_x(point.x - line_point.x + self.scroll_offset)?;
         Some(self.offset_to_utf16(utf8_index))
     }
 }
 
-// Custom element for rendering the text with cursor/selection
+// ── Wrapped line computation ────────────────────────────────────────────────
+
+/// Split `text` into visual lines that fit within `max_width`.
+/// Returns `(lines, byte_offsets)` where each entry is a `ShapedLine` and
+/// the byte offset in the original text where that visual line starts.
+fn compute_wrapped_lines(
+    full_line: &ShapedLine,
+    text: &str,
+    max_width: Pixels,
+    font_size: Pixels,
+    base_run: &TextRun,
+    window: &Window,
+) -> (Vec<ShapedLine>, Vec<usize>) {
+    let ts = window.text_system();
+
+    if text.is_empty() || max_width <= px(0.) {
+        let line = ts.shape_line(" ".into(), font_size, &[base_run.clone()], None);
+        return (vec![line], vec![0]);
+    }
+
+    let mut lines = Vec::new();
+    let mut byte_offsets = Vec::new();
+    let mut start: usize = 0;
+
+    for (idx, _) in text.grapheme_indices(true) {
+        if idx == start {
+            continue;
+        }
+        let x = full_line.x_for_index(idx) - full_line.x_for_index(start);
+        if x > max_width {
+            // Must include at least one grapheme per line
+            let break_at = if idx > start { idx } else { start + 1 };
+            let segment: SharedString = text[start..break_at].to_owned().into();
+            let run = TextRun {
+                len: segment.len(),
+                ..base_run.clone()
+            };
+            lines.push(ts.shape_line(segment, font_size, &[run], None));
+            byte_offsets.push(start);
+            start = break_at;
+        }
+    }
+
+    // Last line
+    let segment: SharedString = if start < text.len() {
+        text[start..].to_owned().into()
+    } else {
+        " ".into()
+    };
+    let run = TextRun {
+        len: segment.len(),
+        ..base_run.clone()
+    };
+    lines.push(ts.shape_line(segment, font_size, &[run], None));
+    byte_offsets.push(start);
+
+    (lines, byte_offsets)
+}
+
+// ── Custom element ──────────────────────────────────────────────────────────
+
 struct TextElement {
     input: Entity<TextInput>,
 }
 
 struct PrepaintState {
-    line: Option<ShapedLine>,
+    scroll_offset: Pixels,
+    /// Single-line mode: one line. Wrapped mode: multiple lines.
+    lines: Vec<ShapedLine>,
+    /// Byte offset where each visual line starts (always same len as `lines`).
+    byte_offsets: Vec<usize>,
     cursor: Option<PaintQuad>,
-    selection: Option<PaintQuad>,
+    selections: Vec<PaintQuad>,
 }
 
 impl IntoElement for TextElement {
@@ -453,9 +595,15 @@ impl Element for TextElement {
         window: &mut Window,
         cx: &mut gpui::App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        let input = self.input.read(cx);
+        let line_count = if input.wrap {
+            input.wrapped_line_count.max(1)
+        } else {
+            1
+        };
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.size.height = window.line_height().into();
+        style.size.height = (window.line_height() * line_count as f32).into();
         (window.request_layout(style, [], cx), ())
     }
 
@@ -473,9 +621,11 @@ impl Element for TextElement {
         let content = input.content.clone();
         let selected_range = input.selected_range.clone();
         let cursor = input.cursor_offset();
+        let wrap = input.wrap;
+        let mut scroll_offset = if wrap { px(0.) } else { input.scroll_offset };
         let style = window.text_style();
 
-        let run = TextRun {
+        let base_run = TextRun {
             len: content.len().max(1),
             font: style.font(),
             color: t.text_primary,
@@ -494,69 +644,168 @@ impl Element for TextElement {
             vec![
                 TextRun {
                     len: marked_range.start,
-                    ..run.clone()
+                    ..base_run.clone()
                 },
                 TextRun {
                     len: marked_range.end - marked_range.start,
                     underline: Some(UnderlineStyle {
-                        color: Some(run.color),
+                        color: Some(base_run.color),
                         thickness: px(1.0),
                         wavy: false,
                     }),
-                    ..run.clone()
+                    ..base_run.clone()
                 },
                 TextRun {
                     len: display_text.len() - marked_range.end,
-                    ..run
+                    ..base_run.clone()
                 },
             ]
             .into_iter()
             .filter(|run| run.len > 0)
             .collect()
         } else {
-            vec![run]
+            vec![base_run.clone()]
         };
 
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let line = window
-            .text_system()
-            .shape_line(display_text, font_size, &runs, None);
+        let full_line =
+            window
+                .text_system()
+                .shape_line(display_text.clone(), font_size, &runs, None);
+        let line_height = window.line_height();
 
-        let cursor_pos = line.x_for_index(cursor);
-        let (selection, cursor_quad) = if selected_range.is_empty() {
-            (
-                None,
+        if wrap {
+            // ── Wrapped mode ────────────────────────────────────────
+            let (lines, byte_offsets) = compute_wrapped_lines(
+                &full_line,
+                &content,
+                bounds.size.width,
+                font_size,
+                &base_run,
+                window,
+            );
+
+            // Cursor position in wrapped layout
+            let cursor_line = byte_offsets
+                .iter()
+                .rposition(|&off| off <= cursor)
+                .unwrap_or(0);
+            let cursor_local = cursor - byte_offsets[cursor_line];
+            let cursor_x = lines[cursor_line].x_for_index(cursor_local);
+
+            let cursor_quad = if selected_range.is_empty() {
                 Some(fill(
                     Bounds::new(
-                        point(bounds.left() + cursor_pos, bounds.top()),
-                        size(px(1.), bounds.bottom() - bounds.top()),
+                        point(
+                            bounds.left() + cursor_x,
+                            bounds.top() + line_height * cursor_line as f32,
+                        ),
+                        size(px(1.), line_height),
                     ),
                     t.text_primary,
-                )),
-            )
-        } else {
-            (
-                Some(fill(
-                    Bounds::from_corners(
-                        point(
-                            bounds.left() + line.x_for_index(selected_range.start),
-                            bounds.top(),
-                        ),
-                        point(
-                            bounds.left() + line.x_for_index(selected_range.end),
-                            bounds.bottom(),
-                        ),
-                    ),
-                    rgba(0xffffff30),
-                )),
-                None,
-            )
-        };
+                ))
+            } else {
+                None
+            };
 
-        PrepaintState {
-            line: Some(line),
-            cursor: cursor_quad,
-            selection,
+            // Selection quads (may span multiple visual lines)
+            let mut selections = Vec::new();
+            if !selected_range.is_empty() {
+                for (i, &offset) in byte_offsets.iter().enumerate() {
+                    let line_end = if i + 1 < byte_offsets.len() {
+                        byte_offsets[i + 1]
+                    } else {
+                        content.len()
+                    };
+                    // Does selection intersect this visual line?
+                    let sel_start = selected_range.start.max(offset);
+                    let sel_end = selected_range.end.min(line_end);
+                    if sel_start < sel_end {
+                        let x_start = lines[i].x_for_index(sel_start - offset);
+                        let x_end = lines[i].x_for_index(sel_end - offset);
+                        let y = bounds.top() + line_height * i as f32;
+                        selections.push(fill(
+                            Bounds::from_corners(
+                                point(bounds.left() + x_start, y),
+                                point(bounds.left() + x_end, y + line_height),
+                            ),
+                            rgba(0xffffff30),
+                        ));
+                    }
+                }
+            }
+
+            // Update wrapped line count for next frame's layout
+            let line_count = lines.len();
+            self.input.update(cx, |input, _cx| {
+                input.wrapped_line_count = line_count;
+                input.scroll_offset = px(0.);
+            });
+
+            PrepaintState {
+                scroll_offset: px(0.),
+                lines,
+                byte_offsets,
+                cursor: cursor_quad,
+                selections,
+            }
+        } else {
+            // ── Single-line mode ────────────────────────────────────
+            let cursor_pos = full_line.x_for_index(cursor);
+            let visible_width = bounds.size.width;
+            let padding = px(4.);
+            if cursor_pos < scroll_offset + padding {
+                scroll_offset = (cursor_pos - padding).max(px(0.));
+            } else if cursor_pos > scroll_offset + visible_width - padding {
+                scroll_offset = cursor_pos - visible_width + padding;
+            }
+            if scroll_offset < px(0.) {
+                scroll_offset = px(0.);
+            }
+
+            self.input.update(cx, |input, _cx| {
+                input.scroll_offset = scroll_offset;
+            });
+
+            let (selection, cursor_quad) = if selected_range.is_empty() {
+                (
+                    None,
+                    Some(fill(
+                        Bounds::new(
+                            point(bounds.left() + cursor_pos - scroll_offset, bounds.top()),
+                            size(px(1.), bounds.bottom() - bounds.top()),
+                        ),
+                        t.text_primary,
+                    )),
+                )
+            } else {
+                (
+                    Some(fill(
+                        Bounds::from_corners(
+                            point(
+                                bounds.left() + full_line.x_for_index(selected_range.start)
+                                    - scroll_offset,
+                                bounds.top(),
+                            ),
+                            point(
+                                bounds.left() + full_line.x_for_index(selected_range.end)
+                                    - scroll_offset,
+                                bounds.bottom(),
+                            ),
+                        ),
+                        rgba(0xffffff30),
+                    )),
+                    None,
+                )
+            };
+
+            PrepaintState {
+                scroll_offset,
+                lines: vec![full_line],
+                byte_offsets: vec![0],
+                cursor: cursor_quad,
+                selections: selection.into_iter().collect(),
+            }
         }
     }
 
@@ -571,24 +820,40 @@ impl Element for TextElement {
         cx: &mut gpui::App,
     ) {
         let focus_handle = self.input.read(cx).focus_handle.clone();
+        let wrap = self.input.read(cx).wrap;
+
         window.handle_input(
             &focus_handle,
             ElementInputHandler::new(bounds, self.input.clone()),
             cx,
         );
-        if let Some(selection) = prepaint.selection.take() {
-            window.paint_quad(selection)
+
+        for sel in prepaint.selections.drain(..) {
+            window.paint_quad(sel);
         }
-        let line = prepaint.line.take().unwrap();
-        line.paint(
-            bounds.origin,
-            window.line_height(),
-            gpui::TextAlign::Left,
-            None,
-            window,
-            cx,
-        )
-        .unwrap();
+
+        let line_height = window.line_height();
+        let lines: Vec<ShapedLine> = std::mem::take(&mut prepaint.lines);
+        let byte_offsets: Vec<usize> = std::mem::take(&mut prepaint.byte_offsets);
+
+        if wrap {
+            for (i, line) in lines.iter().enumerate() {
+                let origin = point(bounds.origin.x, bounds.origin.y + line_height * i as f32);
+                line.paint(origin, line_height, gpui::TextAlign::Left, None, window, cx)
+                    .unwrap();
+            }
+        } else {
+            let line = &lines[0];
+            line.paint(
+                point(bounds.origin.x - prepaint.scroll_offset, bounds.origin.y),
+                line_height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            )
+            .unwrap();
+        }
 
         if focus_handle.is_focused(window)
             && let Some(cursor) = prepaint.cursor.take()
@@ -597,8 +862,20 @@ impl Element for TextElement {
         }
 
         self.input.update(cx, |input, _cx| {
-            input.last_layout = Some(line);
-            input.last_bounds = Some(bounds);
+            if wrap {
+                input.last_wrapped = Some(WrappedLayout {
+                    lines,
+                    byte_offsets,
+                    bounds,
+                    line_height,
+                });
+                input.last_layout = None;
+                input.last_bounds = None;
+            } else {
+                input.last_layout = Some(lines.into_iter().next().unwrap());
+                input.last_bounds = Some(bounds);
+                input.last_wrapped = None;
+            }
         });
     }
 }

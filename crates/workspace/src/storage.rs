@@ -136,6 +136,42 @@ fn config_path() -> Result<PathBuf> {
     Ok(dirs.config_dir().join("config.json"))
 }
 
+pub fn keybindings_path() -> Result<PathBuf> {
+    let dirs =
+        ProjectDirs::from("", "", "dif").context("failed to resolve app support directory")?;
+    Ok(dirs.config_dir().join("keybindings.json"))
+}
+
+pub fn load_keybindings() -> Result<Vec<crate::keybindings::KeybindingEntry>> {
+    let path = keybindings_path()?;
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(crate::keybindings::default_keybindings());
+        }
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to read {}", path.display()));
+        }
+    };
+
+    let entries: Vec<crate::keybindings::KeybindingEntry> = serde_json::from_str(&contents)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    Ok(entries)
+}
+
+pub fn ensure_keybindings_file() -> Result<PathBuf> {
+    let path = keybindings_path()?;
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let defaults = crate::keybindings::default_keybindings();
+        let contents = serde_json::to_string_pretty(&defaults)?;
+        fs::write(&path, contents)?;
+    }
+    Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{RawAppConfig, RawSavedProject, RawSavedSession};

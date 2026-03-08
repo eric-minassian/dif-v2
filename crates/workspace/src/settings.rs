@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::ui_state::UpdateStatus;
-use crate::updater;
+use crate::{storage, updater};
 use ui::prelude::*;
 use ui::text_input::{TextInput, TextInputEvent};
 
@@ -25,6 +25,17 @@ impl WorkspaceView {
         }
         self.persist_config();
         cx.notify();
+    }
+
+    pub(crate) fn on_open_keybindings_file(&mut self) {
+        match storage::ensure_keybindings_file() {
+            Ok(path) => {
+                let _ = std::process::Command::new("open").arg(&path).spawn();
+            }
+            Err(error) => {
+                self.state.flash_error = Some(format!("Failed to open keybindings: {error}"));
+            }
+        }
     }
 
     pub(crate) fn on_open_settings(&mut self, cx: &mut Context<Self>) {
@@ -264,6 +275,53 @@ impl WorkspaceView {
         }
 
         content = content.child(about_section);
+
+        // Keybindings section
+        let keybindings_path = storage::keybindings_path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        let keybindings_section = v_flex()
+            .gap_2()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(t.text_muted)
+                    .child("KEYBINDINGS"),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(t.text_dim)
+                    .child("Customize keyboard shortcuts by editing the keybindings file. Changes take effect on restart."),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(t.text_dim)
+                    .overflow_hidden()
+                    .child(keybindings_path),
+            )
+            .child(
+                div()
+                    .id("open-keybindings-btn")
+                    .cursor_pointer()
+                    .mt_1()
+                    .px_2()
+                    .py_1()
+                    .rounded_sm()
+                    .text_xs()
+                    .bg(t.bg_elevated)
+                    .text_color(t.text_secondary)
+                    .hover(|style| style.bg(t.bg_elevated_hover).text_color(t.text_primary))
+                    .on_click(cx.listener(|this, _event, _window, _cx| {
+                        this.on_open_keybindings_file();
+                    }))
+                    .child("Open keybindings file"),
+            );
+
+        content = content.child(keybindings_section);
 
         // Per-project settings
         for project in &self.state.config.projects {

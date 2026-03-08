@@ -7,6 +7,7 @@ mod git_actions;
 mod git_poll;
 mod help;
 mod helpers;
+pub mod keybindings;
 mod left_panel;
 mod pane_group;
 mod panel_action;

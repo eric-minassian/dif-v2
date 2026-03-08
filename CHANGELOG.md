@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/eric-minassian/dif-v2/compare/v0.14.0...v0.14.1) (2026-03-08)
+
+
+### Bug Fixes
+
+* improve github integration ([be79ebd](https://github.com/eric-minassian/dif-v2/commit/be79ebdbbece68c2323e3469563a9b1d37425160))
+
 ## [0.14.0](https://github.com/eric-minassian/dif-v2/compare/v0.13.0...v0.14.0) (2026-03-07)
 
 

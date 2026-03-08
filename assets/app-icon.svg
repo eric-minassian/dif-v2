@@ -1,97 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1e2030"/>
-      <stop offset="100%" stop-color="#14151f"/>
-    </linearGradient>
-    <linearGradient id="panelLeft" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#1a1c2a"/>
-      <stop offset="100%" stop-color="#161824"/>
-    </linearGradient>
-    <linearGradient id="panelRight" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#1a1c2a"/>
-      <stop offset="100%" stop-color="#161824"/>
-    </linearGradient>
-    <clipPath id="iconClip">
-      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224"/>
+    <clipPath id="shape">
+      <rect width="1024" height="1024" rx="224" ry="224"/>
     </clipPath>
+
+    <!-- Warm cream gradient for top-left half -->
+    <linearGradient id="lightHalf" x1="0" y1="0" x2="0.55" y2="0.55">
+      <stop offset="0%" stop-color="#f7f2e8"/>
+      <stop offset="100%" stop-color="#ebe3d4"/>
+    </linearGradient>
+
+    <!-- Deep indigo gradient for bottom-right half -->
+    <linearGradient id="darkHalf" x1="0.45" y1="0.45" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4338ca"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+
+    <!-- Soft glow along the gap -->
+    <filter id="gapGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10"/>
+    </filter>
   </defs>
 
-  <!-- Background -->
-  <rect width="1024" height="1024" rx="224" ry="224" fill="url(#bg)"/>
+  <g clip-path="url(#shape)">
+    <!-- Base fill (visible in gap) -->
+    <rect width="1024" height="1024" fill="#0c0d1a"/>
 
-  <!-- Subtle border -->
-  <rect x="4" y="4" width="1016" height="1016" rx="220" ry="220" fill="none" stroke="#2a2d3e" stroke-width="2"/>
+    <!-- Subtle luminous glow along the diagonal gap -->
+    <line x1="-30" y1="1054" x2="1054" y2="-30"
+          stroke="#6366f1" stroke-width="4" opacity="0.3" filter="url(#gapGlow)"/>
 
-  <!-- Left diff panel -->
-  <rect x="140" y="200" width="340" height="624" rx="20" ry="20" fill="url(#panelLeft)" stroke="#2a2d3e" stroke-width="2"/>
+    <!-- Top-left half — warm cream -->
+    <polygon points="-2,-2 1017,-2 -2,1017" fill="url(#lightHalf)"/>
 
-  <!-- Right diff panel -->
-  <rect x="544" y="200" width="340" height="624" rx="20" ry="20" fill="url(#panelRight)" stroke="#2a2d3e" stroke-width="2"/>
-
-  <!-- Left panel - removed lines (red) -->
-  <!-- Line 1 - context -->
-  <rect x="172" y="260" width="180" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 2 - context -->
-  <rect x="172" y="300" width="140" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 3 - removed highlight -->
-  <rect x="155" y="350" width="310" height="36" rx="6" fill="#ff6b6b" opacity="0.12"/>
-  <rect x="172" y="361" width="220" height="14" rx="3" fill="#ff6b6b" opacity="0.7"/>
-  <!-- Line 4 - removed highlight -->
-  <rect x="155" y="394" width="310" height="36" rx="6" fill="#ff6b6b" opacity="0.12"/>
-  <rect x="172" y="405" width="160" height="14" rx="3" fill="#ff6b6b" opacity="0.7"/>
-  <!-- Line 5 - context -->
-  <rect x="172" y="456" width="200" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 6 - context -->
-  <rect x="172" y="496" width="120" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 7 - removed -->
-  <rect x="155" y="538" width="310" height="36" rx="6" fill="#ff6b6b" opacity="0.12"/>
-  <rect x="172" y="549" width="250" height="14" rx="3" fill="#ff6b6b" opacity="0.7"/>
-  <!-- Line 8 - context -->
-  <rect x="172" y="600" width="170" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 9 - context -->
-  <rect x="172" y="640" width="210" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 10 - context -->
-  <rect x="172" y="680" width="130" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 11 - context -->
-  <rect x="172" y="720" width="190" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-
-  <!-- Right panel - added lines (green) -->
-  <!-- Line 1 - context -->
-  <rect x="576" y="260" width="180" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 2 - context -->
-  <rect x="576" y="300" width="140" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 3 - added highlight -->
-  <rect x="559" y="350" width="310" height="36" rx="6" fill="#69db7c" opacity="0.12"/>
-  <rect x="576" y="361" width="240" height="14" rx="3" fill="#69db7c" opacity="0.7"/>
-  <!-- Line 4 - added highlight -->
-  <rect x="559" y="394" width="310" height="36" rx="6" fill="#69db7c" opacity="0.12"/>
-  <rect x="576" y="405" width="180" height="14" rx="3" fill="#69db7c" opacity="0.7"/>
-  <!-- Line 5 - added highlight -->
-  <rect x="559" y="438" width="310" height="36" rx="6" fill="#69db7c" opacity="0.12"/>
-  <rect x="576" y="449" width="270" height="14" rx="3" fill="#69db7c" opacity="0.7"/>
-  <!-- Line 6 - context -->
-  <rect x="576" y="496" width="200" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 7 - context -->
-  <rect x="576" y="536" width="120" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 8 - context -->
-  <rect x="576" y="576" width="170" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 9 - added -->
-  <rect x="559" y="618" width="310" height="36" rx="6" fill="#69db7c" opacity="0.12"/>
-  <rect x="576" y="629" width="210" height="14" rx="3" fill="#69db7c" opacity="0.7"/>
-  <!-- Line 10 - context -->
-  <rect x="576" y="680" width="130" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-  <!-- Line 11 - context -->
-  <rect x="576" y="720" width="190" height="14" rx="3" fill="#4a4d5e" opacity="0.5"/>
-
-  <!-- Center divider glow -->
-  <line x1="512" y1="230" x2="512" y2="794" stroke="#7c7ff2" stroke-width="3" opacity="0.4"/>
-  <line x1="512" y1="230" x2="512" y2="794" stroke="#7c7ff2" stroke-width="1" opacity="0.8"/>
-
-  <!-- Minus sign (left) -->
-  <rect x="212" y="148" width="40" height="6" rx="3" fill="#ff6b6b" opacity="0.8"/>
-
-  <!-- Plus sign (right) -->
-  <rect x="752" y="148" width="40" height="6" rx="3" fill="#69db7c" opacity="0.8"/>
-  <rect x="769" y="131" width="6" height="40" rx="3" fill="#69db7c" opacity="0.8"/>
+    <!-- Bottom-right half — deep indigo -->
+    <polygon points="1026,7 1026,1026 7,1026" fill="url(#darkHalf)"/>
+  </g>
 </svg>

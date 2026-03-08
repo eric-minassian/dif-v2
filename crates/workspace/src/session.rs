@@ -185,7 +185,12 @@ impl WorkspaceView {
         }
 
         if let Some(wt_path) = worktree_path {
-            git::remove_worktree(&repo_root, &wt_path);
+            let repo = repo_root.clone();
+            cx.background_executor()
+                .spawn(async move {
+                    git::remove_worktree(&repo, &wt_path);
+                })
+                .detach();
         }
 
         let was_selected = self

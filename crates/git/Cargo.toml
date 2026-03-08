@@ -8,3 +8,7 @@ gpui.workspace = true
 serde_json.workspace = true
 similar.workspace = true
 syntect.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true

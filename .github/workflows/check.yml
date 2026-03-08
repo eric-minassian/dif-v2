@@ -34,6 +34,11 @@ jobs:
           CARGO_TARGET_DIR: target
         run: cargo check
 
+      - name: cargo test
+        env:
+          CARGO_TARGET_DIR: target
+        run: cargo test --workspace
+
       - name: cargo fmt --check
         env:
           CARGO_TARGET_DIR: target

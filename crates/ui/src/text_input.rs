@@ -650,3 +650,254 @@ impl Focusable for TextInput {
         self.focus_handle.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[gpui::test]
+    fn test_initial_state(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, _window, _cx| {
+            assert_eq!(input.text(), "hello");
+            // new() selects all text
+            assert_eq!(input.selected_range, 0..5);
+        });
+    }
+
+    #[gpui::test]
+    fn test_empty_initial_text(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new(String::new(), window, cx));
+        _ = window.update(cx, |input, _window, _cx| {
+            assert_eq!(input.text(), "");
+            assert_eq!(input.selected_range, 0..0);
+        });
+    }
+
+    #[gpui::test]
+    fn test_backspace_deletes_selection(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            // All text is selected (0..5), backspace should delete it all
+            input.backspace(&Backspace, window, cx);
+            assert_eq!(input.text(), "");
+            assert_eq!(input.selected_range, 0..0);
+        });
+    }
+
+    #[gpui::test]
+    fn test_backspace_single_char(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            // Collapse selection to end
+            input.move_to(5, cx);
+            input.backspace(&Backspace, window, cx);
+            assert_eq!(input.text(), "hell");
+            assert_eq!(input.selected_range, 4..4);
+        });
+    }
+
+    #[gpui::test]
+    fn test_delete_forward(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.move_to(0, cx);
+            input.delete(&Delete, window, cx);
+            assert_eq!(input.text(), "ello");
+            assert_eq!(input.selected_range, 0..0);
+        });
+    }
+
+    #[gpui::test]
+    fn test_left_collapses_selection_to_start(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            // selected_range is 0..5
+            input.left(&Left, window, cx);
+            assert_eq!(input.selected_range, 0..0);
+        });
+    }
+
+    #[gpui::test]
+    fn test_right_collapses_selection_to_end(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.right(&Right, window, cx);
+            assert_eq!(input.selected_range, 5..5);
+        });
+    }
+
+    #[gpui::test]
+    fn test_select_all(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.move_to(3, cx);
+            assert_eq!(input.selected_range, 3..3);
+            input.select_all(&SelectAll, window, cx);
+            assert_eq!(input.selected_range, 0..5);
+        });
+    }
+
+    #[gpui::test]
+    fn test_home_and_end(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("hello".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.move_to(3, cx);
+            input.end(&End, window, cx);
+            assert_eq!(input.selected_range, 5..5);
+            input.home(&Home, window, cx);
+            assert_eq!(input.selected_range, 0..0);
+        });
+    }
+
+    #[gpui::test]
+    fn test_replace_text_in_range(cx: &mut gpui::TestAppContext) {
+        let window =
+            cx.add_window(|window, cx| TextInput::new("hello world".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            // Replace "world" (bytes 6..11) with "rust"
+            input.replace_text_in_range(
+                Some(6..11), // UTF-16 range (ASCII so same as byte range)
+                "rust",
+                window,
+                cx,
+            );
+            assert_eq!(input.text(), "hello rust");
+        });
+    }
+
+    #[gpui::test]
+    fn test_select_left_right(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("abc".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.move_to(1, cx);
+            input.select_right(&SelectRight, window, cx);
+            assert_eq!(input.selected_range, 1..2);
+            input.select_right(&SelectRight, window, cx);
+            assert_eq!(input.selected_range, 1..3);
+            input.select_left(&SelectLeft, window, cx);
+            assert_eq!(input.selected_range, 1..2);
+        });
+    }
+
+    #[gpui::test]
+    fn test_cursor_navigation(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("abc".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.move_to(0, cx);
+            input.right(&Right, window, cx);
+            assert_eq!(input.selected_range, 1..1);
+            input.right(&Right, window, cx);
+            assert_eq!(input.selected_range, 2..2);
+            input.left(&Left, window, cx);
+            assert_eq!(input.selected_range, 1..1);
+        });
+    }
+
+    #[gpui::test]
+    fn test_right_at_end_stays(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("ab".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.move_to(2, cx);
+            input.right(&Right, window, cx);
+            assert_eq!(input.selected_range, 2..2);
+        });
+    }
+
+    #[gpui::test]
+    fn test_left_at_start_stays(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("ab".to_string(), window, cx));
+        _ = window.update(cx, |input, window, cx| {
+            input.move_to(0, cx);
+            input.left(&Left, window, cx);
+            assert_eq!(input.selected_range, 0..0);
+        });
+    }
+
+    #[gpui::test]
+    fn test_utf16_offset_roundtrip(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| {
+            // Multi-byte char: '€' is 3 bytes UTF-8, 1 code unit UTF-16
+            TextInput::new("a€b".to_string(), window, cx)
+        });
+        _ = window.update(cx, |input, _window, _cx| {
+            // 'a' = byte 0, '€' = bytes 1..4, 'b' = byte 4
+            assert_eq!(input.offset_to_utf16(0), 0); // start
+            assert_eq!(input.offset_to_utf16(1), 1); // after 'a'
+            assert_eq!(input.offset_to_utf16(4), 2); // after '€'
+            assert_eq!(input.offset_to_utf16(5), 3); // after 'b'
+
+            assert_eq!(input.offset_from_utf16(0), 0);
+            assert_eq!(input.offset_from_utf16(1), 1);
+            assert_eq!(input.offset_from_utf16(2), 4);
+            assert_eq!(input.offset_from_utf16(3), 5);
+        });
+    }
+
+    #[gpui::test]
+    fn test_grapheme_boundaries(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("abc".to_string(), window, cx));
+        _ = window.update(cx, |input, _window, _cx| {
+            assert_eq!(input.previous_boundary(3), 2);
+            assert_eq!(input.previous_boundary(2), 1);
+            assert_eq!(input.previous_boundary(1), 0);
+            assert_eq!(input.previous_boundary(0), 0);
+
+            assert_eq!(input.next_boundary(0), 1);
+            assert_eq!(input.next_boundary(1), 2);
+            assert_eq!(input.next_boundary(2), 3);
+            assert_eq!(input.next_boundary(3), 3);
+        });
+    }
+
+    #[gpui::test]
+    fn test_confirm_emits_trimmed_text(cx: &mut gpui::TestAppContext) {
+        let window =
+            cx.add_window(|window, cx| TextInput::new("  hello  ".to_string(), window, cx));
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        _ = window.update(cx, |_input, _window, cx| {
+            let entity = cx.entity();
+            cx.subscribe(
+                &entity,
+                move |_this, _emitter, event: &TextInputEvent, _cx| {
+                    events_clone.lock().unwrap().push(event.clone());
+                },
+            )
+            .detach();
+        });
+        _ = window.update(cx, |input, window, cx| {
+            input.confirm(&Confirm, window, cx);
+        });
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            TextInputEvent::Confirm(text) => assert_eq!(text, "hello"),
+            other => panic!("expected Confirm, got {:?}", other),
+        }
+    }
+
+    #[gpui::test]
+    fn test_cancel_emits_event(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|window, cx| TextInput::new("text".to_string(), window, cx));
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        _ = window.update(cx, |_input, _window, cx| {
+            let entity = cx.entity();
+            cx.subscribe(
+                &entity,
+                move |_this, _emitter, event: &TextInputEvent, _cx| {
+                    events_clone.lock().unwrap().push(event.clone());
+                },
+            )
+            .detach();
+        });
+        _ = window.update(cx, |input, window, cx| {
+            input.cancel(&Cancel, window, cx);
+        });
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], TextInputEvent::Cancel));
+    }
+}

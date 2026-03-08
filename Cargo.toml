@@ -23,16 +23,35 @@ git = { path = "crates/git" }
 terminal = { path = "crates/terminal" }
 ui = { path = "crates/ui" }
 workspace = { path = "crates/workspace" }
+pretty_assertions = "1.4"
+tempfile = "3.15"
 
 [package]
 name = "dif"
 version.workspace = true
 edition.workspace = true
 
+[features]
+visual-tests = [
+    "gpui/test-support",
+    "gpui_platform/test-support",
+    "image",
+]
+
+[[bin]]
+name = "dif"
+path = "src/main.rs"
+
+[[bin]]
+name = "visual_test_runner"
+path = "src/visual_test_runner.rs"
+required-features = ["visual-tests"]
+
 [dependencies]
 anyhow.workspace = true
 gpui.workspace = true
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "9663d059bcf948689323753012982791e5094ba5", package = "gpui_platform", features = ["font-kit"] }
+image = { version = "0.25", optional = true }
 rust-embed = "8.11.0"
 terminal.workspace = true
 ui.workspace = true

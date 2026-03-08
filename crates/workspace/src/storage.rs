@@ -174,8 +174,9 @@ pub fn ensure_keybindings_file() -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{RawAppConfig, RawSavedProject, RawSavedSession};
+    use super::*;
     use crate::config::{AppConfig, ProjectSettings, SavedProject, SavedSession};
+    use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
     #[test]
@@ -305,5 +306,159 @@ mod tests {
         assert_eq!(config.projects.len(), 1);
         assert_eq!(config.projects[0].sessions.len(), 0);
         assert_eq!(config.projects[0].last_selected_session, None);
+    }
+
+    #[test]
+    fn lenient_deserialization_handles_extra_fields() {
+        let json = r#"{
+            "projects": [{
+                "repo_root": "/tmp/repo",
+                "display_name": "repo",
+                "last_known_valid": true,
+                "sessions": [],
+                "unknown_future_field": "should be ignored"
+            }],
+            "last_selected_repo": null,
+            "some_new_setting": 42
+        }"#;
+
+        // RawAppConfig should tolerate unknown fields (serde default behavior)
+        let raw: RawAppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.projects.len(), 1);
+        assert_eq!(raw.projects[0].repo_root, Some(PathBuf::from("/tmp/repo")));
+    }
+
+    #[test]
+    fn lenient_deserialization_handles_missing_optional_fields() {
+        let json = r#"{
+            "projects": [{
+                "repo_root": "/tmp/repo"
+            }]
+        }"#;
+
+        let raw: RawAppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.projects.len(), 1);
+        assert_eq!(raw.projects[0].display_name, None);
+        assert_eq!(raw.projects[0].last_known_valid, None);
+        assert!(raw.projects[0].sessions.is_empty());
+    }
+
+    #[test]
+    fn sessions_without_id_are_filtered_out() {
+        let raw = RawAppConfig {
+            projects: vec![RawSavedProject {
+                repo_root: Some(PathBuf::from("/tmp/repo")),
+                display_name: Some("repo".into()),
+                last_known_valid: Some(true),
+                sessions: vec![
+                    RawSavedSession {
+                        id: None, // missing id → should be filtered
+                        name: Some("bad session".into()),
+                        worktree_path: None,
+                    },
+                    RawSavedSession {
+                        id: Some("1".into()),
+                        name: Some("good session".into()),
+                        worktree_path: None,
+                    },
+                ],
+                last_selected_session: None,
+                ..Default::default()
+            }],
+            last_selected_repo: None,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&raw).unwrap();
+        let parsed: RawAppConfig = serde_json::from_str(&json).unwrap();
+
+        let sessions: Vec<SavedSession> = parsed.projects[0]
+            .sessions
+            .iter()
+            .filter_map(|s| {
+                Some(SavedSession {
+                    id: s.id.clone()?,
+                    name: s.name.clone().unwrap_or_default(),
+                    worktree_path: s.worktree_path.clone(),
+                })
+            })
+            .collect();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "good session");
+    }
+
+    #[test]
+    fn session_name_defaults_to_session() {
+        let raw_session = RawSavedSession {
+            id: Some("1".into()),
+            name: None,
+            worktree_path: None,
+        };
+
+        let session = SavedSession {
+            id: raw_session.id.unwrap(),
+            name: raw_session.name.unwrap_or_else(|| "Session".to_string()),
+            worktree_path: raw_session.worktree_path,
+        };
+
+        assert_eq!(session.name, "Session");
+    }
+
+    #[test]
+    fn save_and_load_roundtrip_via_tempfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+
+        let config = AppConfig {
+            projects: vec![SavedProject {
+                repo_root: PathBuf::from("/tmp/test-repo"),
+                display_name: "test-repo".to_string(),
+                last_known_valid: true,
+                sessions: vec![SavedSession {
+                    id: "1".to_string(),
+                    name: "dev".to_string(),
+                    worktree_path: None,
+                }],
+                last_selected_session: Some("1".to_string()),
+                settings: ProjectSettings {
+                    workspace_init_commands: vec!["npm install".to_string()],
+                    enforce_conventional_commits: true,
+                },
+            }],
+            last_selected_repo: Some(PathBuf::from("/tmp/test-repo")),
+            left_sidebar_width: Some(280.0),
+            right_sidebar_width: None,
+            bottom_panel_height: Some(180.0),
+        };
+
+        let contents = serde_json::to_string_pretty(&config).unwrap();
+        std::fs::write(&path, &contents).unwrap();
+
+        let loaded_contents = std::fs::read_to_string(&path).unwrap();
+        let raw: RawAppConfig = serde_json::from_str(&loaded_contents).unwrap();
+
+        assert_eq!(raw.projects.len(), 1);
+        assert_eq!(
+            raw.projects[0].repo_root,
+            Some(PathBuf::from("/tmp/test-repo"))
+        );
+        assert_eq!(raw.left_sidebar_width, Some(280.0));
+        assert_eq!(raw.right_sidebar_width, None);
+        assert_eq!(raw.bottom_panel_height, Some(180.0));
+
+        let settings = raw.projects[0].settings.as_ref().unwrap();
+        assert_eq!(settings.enforce_conventional_commits, Some(true));
+        assert_eq!(
+            settings.workspace_init_commands,
+            Some(vec!["npm install".to_string()])
+        );
+    }
+
+    #[test]
+    fn corrupt_json_falls_back_to_default() {
+        let raw: RawAppConfig = serde_json::from_str("not json at all").unwrap_or_default();
+        assert!(raw.projects.is_empty());
+        assert_eq!(raw.last_selected_repo, None);
     }
 }

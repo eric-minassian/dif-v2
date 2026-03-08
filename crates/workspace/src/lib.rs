@@ -24,6 +24,9 @@ mod ui_state;
 mod update_actions;
 mod updater;
 
+#[cfg(test)]
+mod workspace_tests;
+
 use std::path::{Path, PathBuf};
 
 use gpui::{App, CursorStyle, Entity, FocusHandle, Focusable, MouseButton, Subscription, actions};

@@ -77,3 +77,153 @@ pub struct AppConfig {
     #[serde(default)]
     pub bottom_panel_height: Option<f32>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn from_repo_root_derives_display_name() {
+        let project = SavedProject::from_repo_root(PathBuf::from("/home/user/my-project"));
+        assert_eq!(project.display_name, "my-project");
+        assert_eq!(project.repo_root, PathBuf::from("/home/user/my-project"));
+        assert!(project.last_known_valid);
+        assert!(project.sessions.is_empty());
+        assert_eq!(project.last_selected_session, None);
+    }
+
+    #[test]
+    fn from_repo_root_handles_root_path() {
+        let project = SavedProject::from_repo_root(PathBuf::from("/"));
+        assert_eq!(project.display_name, "repo");
+    }
+
+    #[test]
+    fn next_session_id_empty() {
+        let project = SavedProject::from_repo_root(PathBuf::from("/tmp/repo"));
+        assert_eq!(project.next_session_id(), "1");
+    }
+
+    #[test]
+    fn next_session_id_increments() {
+        let mut project = SavedProject::from_repo_root(PathBuf::from("/tmp/repo"));
+        project.sessions = vec![
+            SavedSession {
+                id: "1".to_string(),
+                name: "first".to_string(),
+                worktree_path: None,
+            },
+            SavedSession {
+                id: "3".to_string(),
+                name: "third".to_string(),
+                worktree_path: None,
+            },
+        ];
+        assert_eq!(project.next_session_id(), "4");
+    }
+
+    #[test]
+    fn next_session_id_skips_non_numeric() {
+        let mut project = SavedProject::from_repo_root(PathBuf::from("/tmp/repo"));
+        project.sessions = vec![
+            SavedSession {
+                id: "abc".to_string(),
+                name: "alpha".to_string(),
+                worktree_path: None,
+            },
+            SavedSession {
+                id: "2".to_string(),
+                name: "second".to_string(),
+                worktree_path: None,
+            },
+        ];
+        assert_eq!(project.next_session_id(), "3");
+    }
+
+    #[test]
+    fn app_config_serialization_roundtrip() {
+        let config = AppConfig {
+            projects: vec![SavedProject {
+                repo_root: PathBuf::from("/tmp/my-repo"),
+                display_name: "my-repo".to_string(),
+                last_known_valid: true,
+                sessions: vec![SavedSession {
+                    id: "1".to_string(),
+                    name: "main".to_string(),
+                    worktree_path: Some(PathBuf::from("/tmp/worktree")),
+                }],
+                last_selected_session: Some("1".to_string()),
+                settings: ProjectSettings {
+                    workspace_init_commands: vec!["echo hi".to_string()],
+                    enforce_conventional_commits: true,
+                },
+            }],
+            last_selected_repo: Some(PathBuf::from("/tmp/my-repo")),
+            left_sidebar_width: Some(250.0),
+            right_sidebar_width: Some(300.0),
+            bottom_panel_height: Some(200.0),
+        };
+
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.projects.len(), 1);
+        assert_eq!(restored.projects[0].repo_root, config.projects[0].repo_root);
+        assert_eq!(
+            restored.projects[0].display_name,
+            config.projects[0].display_name
+        );
+        assert_eq!(
+            restored.projects[0].settings.enforce_conventional_commits,
+            true
+        );
+        assert_eq!(
+            restored.projects[0].settings.workspace_init_commands,
+            vec!["echo hi"]
+        );
+        assert_eq!(restored.left_sidebar_width, Some(250.0));
+        assert_eq!(restored.right_sidebar_width, Some(300.0));
+        assert_eq!(restored.bottom_panel_height, Some(200.0));
+    }
+
+    #[test]
+    fn project_settings_defaults() {
+        let settings = ProjectSettings::default();
+        assert!(settings.workspace_init_commands.is_empty());
+        assert!(!settings.enforce_conventional_commits);
+    }
+
+    #[test]
+    fn saved_session_with_worktree() {
+        let session = SavedSession {
+            id: "1".to_string(),
+            name: "feature".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp/wt")),
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        let restored: SavedSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.worktree_path, Some(PathBuf::from("/tmp/wt")));
+    }
+
+    #[test]
+    fn saved_session_without_worktree_omits_field() {
+        let session = SavedSession {
+            id: "1".to_string(),
+            name: "main".to_string(),
+            worktree_path: None,
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(!json.contains("worktree_path"));
+    }
+
+    #[test]
+    fn config_constants_are_reasonable() {
+        assert!(MIN_SIDEBAR_WIDTH < DEFAULT_LEFT_SIDEBAR_WIDTH);
+        assert!(DEFAULT_LEFT_SIDEBAR_WIDTH < MAX_SIDEBAR_WIDTH);
+        assert!(MIN_SIDEBAR_WIDTH < DEFAULT_RIGHT_SIDEBAR_WIDTH);
+        assert!(DEFAULT_RIGHT_SIDEBAR_WIDTH < MAX_SIDEBAR_WIDTH);
+        assert!(MIN_BOTTOM_PANEL_HEIGHT < DEFAULT_BOTTOM_PANEL_HEIGHT);
+        assert!(DEFAULT_BOTTOM_PANEL_HEIGHT < MAX_BOTTOM_PANEL_HEIGHT);
+    }
+}

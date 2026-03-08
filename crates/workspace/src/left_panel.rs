@@ -3,7 +3,7 @@ use gpui::ClickEvent;
 use crate::config::SavedProject;
 use git::BranchStatus;
 use ui::prelude::*;
-use ui::{PanelSide, button, panel, section_header};
+use ui::{PanelSide, button, panel};
 
 use crate::WorkspaceView;
 
@@ -37,7 +37,6 @@ impl WorkspaceView {
 
         panel(PanelSide::Left)
             .w(px(self.state.left_sidebar_width))
-            .child(section_header("Projects").py_3())
             .child(project_list)
             .child(self.render_sidebar_footer(cx))
             .into_any_element()

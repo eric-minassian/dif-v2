@@ -585,7 +585,7 @@ impl Render for WorkspaceView {
             .flex_col()
             .bg(t.bg_base)
             .text_color(t.text_primary)
-            .child(self.render_titlebar(cx))
+            .child(self.render_titlebar(window, cx))
             .children(self.flash_banner(cx))
             .child(
                 div()

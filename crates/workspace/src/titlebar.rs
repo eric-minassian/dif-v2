@@ -244,8 +244,13 @@ impl WorkspaceView {
         )
     }
 
-    pub(crate) fn render_titlebar(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_titlebar(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let t = theme();
+        let is_fullscreen = window.is_fullscreen();
         let left_collapsed = self.state.left_sidebar_collapsed;
         let right_collapsed = self.state.right_sidebar_collapsed;
 
@@ -297,27 +302,39 @@ impl WorkspaceView {
             .bg(t.bg_titlebar)
             .border_b_1()
             .border_color(t.border_subtle)
-            // Left side: traffic light padding + sidebar toggle
+            // Left side: traffic light padding + sidebar toggle + app name
             .child(
-                h_flex().pl(px(78.)).child(
-                    div()
-                        .id("toggle-left-sidebar")
-                        .px_2()
-                        .py_1()
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .hover(|style| style.bg(t.hover_overlay))
-                        .on_click(cx.listener(|this, _, _window, cx| {
-                            this.on_toggle_left_sidebar(cx);
-                        }))
-                        .child(Icon::new(IconName::PanelLeft).size(px(14.)).color(
-                            if left_collapsed {
-                                t.text_dim
-                            } else {
-                                t.text_muted
-                            },
-                        )),
-                ),
+                h_flex()
+                    .pl(if is_fullscreen { px(8.) } else { px(78.) })
+                    .gap_1()
+                    .items_center()
+                    .child(
+                        div()
+                            .id("toggle-left-sidebar")
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .hover(|style| style.bg(t.hover_overlay))
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.on_toggle_left_sidebar(cx);
+                            }))
+                            .child(Icon::new(IconName::PanelLeft).size(px(14.)).color(
+                                if left_collapsed {
+                                    t.text_dim
+                                } else {
+                                    t.text_muted
+                                },
+                            )),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(t.text_secondary)
+                            .pl_1()
+                            .child("Dif"),
+                    ),
             )
             // Center: project name / branch
             .child(

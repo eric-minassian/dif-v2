@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/eric-minassian/dif-v2/compare/v0.14.1...v0.15.0) (2026-03-08)
+
+
+### Features
+
+* custom keybindings ([80bb437](https://github.com/eric-minassian/dif-v2/commit/80bb437ca183461316624167fccf4f28a25af52f))
+
+
+### Bug Fixes
+
+* improve icon ([bfc9498](https://github.com/eric-minassian/dif-v2/commit/bfc9498472c4e256db2de05495aee91c546635e8))
+
 ## [0.14.1](https://github.com/eric-minassian/dif-v2/compare/v0.14.0...v0.14.1) (2026-03-08)
 
 

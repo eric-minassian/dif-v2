@@ -44,16 +44,10 @@ const SECTIONS: &[KeybindingSection] = &[
     },
     KeybindingSection {
         title: "GIT ACTIONS",
-        entries: &[
-            KeybindingEntry {
-                keys: "Cmd + Enter",
-                description: "Run current git action (commit, amend, create PR, rebase)",
-            },
-            KeybindingEntry {
-                keys: "Cmd + R",
-                description: "Refresh git status",
-            },
-        ],
+        entries: &[KeybindingEntry {
+            keys: "Cmd + Enter",
+            description: "Run current git action (commit, amend, create PR, rebase)",
+        }],
     },
     KeybindingSection {
         title: "SESSIONS",
@@ -76,7 +70,7 @@ const SECTIONS: &[KeybindingSection] = &[
                 description: "Toggle left sidebar",
             },
             KeybindingEntry {
-                keys: "Cmd + Shift + B",
+                keys: "Cmd + R",
                 description: "Toggle right sidebar",
             },
         ],

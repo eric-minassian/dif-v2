@@ -5,6 +5,106 @@ use super::types::{BranchStatus, CheckBucket, CiCheck, GitChange, RepoCapabiliti
 
 use super::{default_branch, run_git, run_git_raw, try_run_gh, try_run_git};
 
+// ── Combined GitHub PR data ─────────────────────────────────────────────────
+
+struct GithubPrData {
+    url: String,
+    merged: bool,
+    number: Option<u32>,
+    state: Option<String>,
+    auto_merge_enabled: bool,
+    checks: Vec<CiCheck>,
+}
+
+/// Fetch PR info and CI checks in a single `gh pr view` call.
+fn collect_github_pr_data(worktree: &Path) -> Option<GithubPrData> {
+    let text = try_run_gh(
+        worktree,
+        &[
+            "pr",
+            "view",
+            "--json",
+            "url,state,number,autoMergeRequest,statusCheckRollup",
+        ],
+    )?;
+    let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
+
+    let url = parsed["url"]
+        .as_str()
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    let state = parsed["state"].as_str().unwrap_or_default().to_string();
+    let checks = parse_status_check_rollup(&parsed["statusCheckRollup"]);
+
+    Some(GithubPrData {
+        merged: state == "MERGED",
+        number: parsed["number"].as_u64().map(|n| n as u32),
+        auto_merge_enabled: !parsed["autoMergeRequest"].is_null(),
+        state: Some(state),
+        url,
+        checks,
+    })
+}
+
+fn parse_status_check_rollup(value: &serde_json::Value) -> Vec<CiCheck> {
+    let Some(entries) = value.as_array() else {
+        return Vec::new();
+    };
+
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let typename = entry["__typename"].as_str().unwrap_or_default();
+            match typename {
+                "CheckRun" => {
+                    let name = entry["name"].as_str().unwrap_or_default().to_string();
+                    let status = entry["status"].as_str().unwrap_or_default();
+                    let conclusion = entry["conclusion"].as_str();
+                    let bucket = match (status, conclusion) {
+                        (_, Some("SUCCESS") | Some("NEUTRAL")) => CheckBucket::Pass,
+                        (_, Some("SKIPPED")) => CheckBucket::Skipping,
+                        ("COMPLETED", _) => CheckBucket::Fail,
+                        _ => CheckBucket::Pending,
+                    };
+                    let workflow = entry["workflowName"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    let link = entry["detailsUrl"]
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .filter(|s| !s.is_empty());
+                    Some(CiCheck {
+                        name,
+                        bucket,
+                        workflow,
+                        link,
+                    })
+                }
+                "StatusContext" => {
+                    let name = entry["context"].as_str().unwrap_or_default().to_string();
+                    let bucket = match entry["state"].as_str().unwrap_or_default() {
+                        "SUCCESS" => CheckBucket::Pass,
+                        "PENDING" | "EXPECTED" => CheckBucket::Pending,
+                        _ => CheckBucket::Fail,
+                    };
+                    let link = entry["targetUrl"]
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .filter(|s| !s.is_empty());
+                    Some(CiCheck {
+                        name,
+                        bucket,
+                        workflow: String::new(),
+                        link,
+                    })
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 pub fn collect_changes(repo_root: &Path) -> Result<Vec<GitChange>, String> {
     let (status_result, numstat) = std::thread::scope(|s| {
         let t1 = s.spawn(|| {
@@ -145,45 +245,14 @@ fn count_file_lines(repo_root: &Path, relative_path: &str) -> Option<u32> {
     Some(content.lines().count() as u32)
 }
 
-fn commits_ahead_of_main(worktree: &Path) -> u32 {
-    let branch = default_branch(worktree);
+fn commits_ahead_of(worktree: &Path, default_branch: &str) -> u32 {
     run_git(
         worktree,
-        &["rev-list", "--count", &format!("{branch}..HEAD")],
+        &["rev-list", "--count", &format!("{default_branch}..HEAD")],
     )
     .ok()
     .and_then(|s| s.parse().ok())
     .unwrap_or(0)
-}
-
-struct PrInfo {
-    url: String,
-    merged: bool,
-    number: Option<u32>,
-    state: Option<String>,
-    auto_merge_enabled: bool,
-}
-
-fn check_pr_status(worktree: &Path) -> Option<PrInfo> {
-    let text = try_run_gh(
-        worktree,
-        &["pr", "view", "--json", "url,state,number,autoMergeRequest"],
-    )?;
-    let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
-
-    let url = parsed["url"]
-        .as_str()
-        .filter(|s| !s.is_empty())?
-        .to_string();
-    let state = parsed["state"].as_str().unwrap_or_default().to_string();
-
-    Some(PrInfo {
-        merged: state == "MERGED",
-        number: parsed["number"].as_u64().map(|n| n as u32),
-        auto_merge_enabled: !parsed["autoMergeRequest"].is_null(),
-        state: Some(state),
-        url,
-    })
 }
 
 pub fn check_repo_capabilities(worktree: &Path) -> RepoCapabilities {
@@ -204,75 +273,45 @@ pub fn check_repo_capabilities(worktree: &Path) -> RepoCapabilities {
     .unwrap_or_default()
 }
 
-fn collect_pr_checks(worktree: &Path) -> Vec<CiCheck> {
-    let entries: Vec<serde_json::Value> = try_run_gh(
-        worktree,
-        &["pr", "checks", "--json", "name,bucket,workflow,link"],
-    )
-    .and_then(|text| serde_json::from_str(&text).ok())
-    .unwrap_or_default();
-
-    entries
-        .into_iter()
-        .map(|entry| {
-            let name = entry["name"].as_str().unwrap_or_default().to_string();
-            let bucket = match entry["bucket"].as_str().unwrap_or_default() {
-                "pass" => CheckBucket::Pass,
-                "fail" => CheckBucket::Fail,
-                "pending" => CheckBucket::Pending,
-                "skipping" => CheckBucket::Skipping,
-                _ => CheckBucket::Cancel,
-            };
-            let workflow = entry["workflow"].as_str().unwrap_or_default().to_string();
-            let link = entry["link"]
-                .as_str()
-                .map(|s| s.to_string())
-                .filter(|s| !s.is_empty());
-
-            CiCheck {
-                name,
-                bucket,
-                workflow,
-                link,
-            }
-        })
-        .collect()
-}
-
 pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
-    let (commits_ahead, branch_name, pr_info) = std::thread::scope(|s| {
-        let t1 = s.spawn(|| commits_ahead_of_main(worktree));
+    // Resolve default branch once (local git, fast)
+    let default = default_branch(worktree);
+    let default_short = default.strip_prefix("origin/").unwrap_or(&default);
+
+    // Local git operations in parallel
+    let (commits_ahead, branch_name) = std::thread::scope(|s| {
+        let t1 = s.spawn(|| commits_ahead_of(worktree, &default));
         let t2 = s.spawn(|| super::get_branch_name(worktree).ok());
-        let t3 = s.spawn(|| check_pr_status(worktree));
-        (t1.join().unwrap(), t2.join().unwrap(), t3.join().unwrap())
+        (t1.join().unwrap(), t2.join().unwrap())
     });
 
-    let (pr_url, pr_merged, pr_number, pr_state, auto_merge_enabled) = match pr_info {
-        Some(info) => (
-            Some(info.url),
-            info.merged,
-            info.number,
-            info.state,
-            info.auto_merge_enabled,
-        ),
-        None => (None, false, None, None, false),
-    };
+    // On the default branch there's no PR to check — skip GitHub API calls
+    if branch_name.as_deref() == Some(default_short) {
+        return BranchStatus {
+            commits_ahead,
+            branch_name,
+            ..Default::default()
+        };
+    }
 
-    // collect_pr_checks depends on pr_url, must run after
-    let checks = if pr_url.is_some() {
-        collect_pr_checks(worktree)
-    } else {
-        Vec::new()
-    };
+    // Single GitHub API call for PR info + CI checks
+    let pr_data = collect_github_pr_data(worktree);
 
-    BranchStatus {
-        commits_ahead,
-        pr_url,
-        pr_merged,
-        pr_number,
-        pr_state,
-        checks,
-        auto_merge_enabled,
-        branch_name,
+    match pr_data {
+        Some(data) => BranchStatus {
+            commits_ahead,
+            pr_url: Some(data.url),
+            pr_merged: data.merged,
+            pr_number: data.number,
+            pr_state: data.state,
+            checks: data.checks,
+            auto_merge_enabled: data.auto_merge_enabled,
+            branch_name,
+        },
+        None => BranchStatus {
+            commits_ahead,
+            branch_name,
+            ..Default::default()
+        },
     }
 }

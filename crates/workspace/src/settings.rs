@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use gpui::Focusable;
+
 use crate::ui_state::UpdateStatus;
 use crate::{storage, updater};
 use ui::prelude::*;
@@ -49,13 +51,20 @@ impl WorkspaceView {
         cx.notify();
     }
 
-    pub(crate) fn on_add_init_command(
+    pub(crate) fn on_save_init_command(
         &mut self,
         repo_root: PathBuf,
         command: String,
+        editing_index: Option<usize>,
         cx: &mut Context<Self>,
     ) {
         if command.is_empty() {
+            // If editing and user clears it, remove the command.
+            if let Some(index) = editing_index {
+                self.on_remove_init_command(repo_root, index, cx);
+            }
+            self.settings_input = None;
+            cx.notify();
             return;
         }
         if let Some(project) = self
@@ -65,7 +74,14 @@ impl WorkspaceView {
             .iter_mut()
             .find(|p| p.repo_root == repo_root)
         {
-            project.settings.workspace_init_commands.push(command);
+            match editing_index {
+                Some(i) if i < project.settings.workspace_init_commands.len() => {
+                    project.settings.workspace_init_commands[i] = command;
+                }
+                _ => {
+                    project.settings.workspace_init_commands.push(command);
+                }
+            }
         }
         self.settings_input = None;
         self.persist_config();
@@ -98,21 +114,65 @@ impl WorkspaceView {
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        let input = cx.new(|cx| TextInput::new(String::new(), window, cx));
+        self.start_init_command_edit(repo_root, String::new(), None, window, cx);
+    }
+
+    pub(crate) fn on_start_edit_init_command(
+        &mut self,
+        repo_root: PathBuf,
+        index: usize,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let existing_text = self
+            .state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.repo_root == repo_root)
+            .and_then(|p| p.settings.workspace_init_commands.get(index))
+            .cloned()
+            .unwrap_or_default();
+        self.start_init_command_edit(repo_root, existing_text, Some(index), window, cx);
+    }
+
+    fn start_init_command_edit(
+        &mut self,
+        repo_root: PathBuf,
+        initial_text: String,
+        editing_index: Option<usize>,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = cx.new(|cx| TextInput::new(initial_text, window, cx).wrapping());
         let repo = repo_root.clone();
+        let idx = editing_index;
         let event_sub = cx.subscribe(&input, move |this, _input, event, cx| match event {
             TextInputEvent::Confirm(text) => {
-                this.on_add_init_command(repo.clone(), text.clone(), cx);
+                this.on_save_init_command(repo.clone(), text.clone(), idx, cx);
             }
             TextInputEvent::Cancel => {
                 this.settings_input = None;
                 cx.notify();
             }
         });
+        let blur_repo = repo_root.clone();
+        let blur_sub = cx.on_blur(
+            &input.read(cx).focus_handle(cx),
+            window,
+            move |this, _window, cx| {
+                if let Some(edit) = this.settings_input.take() {
+                    let text = edit.input.read(cx).text().trim().to_string();
+                    this.on_save_init_command(blur_repo.clone(), text, idx, cx);
+                }
+            },
+        );
         self.settings_input = Some(SettingsEdit {
             repo_root,
             input,
+            editing_index,
             _event_sub: event_sub,
+            _blur_sub: blur_sub,
         });
         cx.notify();
     }
@@ -410,8 +470,18 @@ impl WorkspaceView {
                         .child("Run after worktree creation. Available env vars: $DIF_WORKTREE_DIR, $DIF_REPO_DIR"),
                 );
 
-            if project.settings.workspace_init_commands.is_empty() {
-                project_section = project_section.child(
+            // Determine if we're editing a command for this project
+            let active_edit = self
+                .settings_input
+                .as_ref()
+                .filter(|s| s.repo_root == repo_root);
+            let editing_index = active_edit.and_then(|s| s.editing_index);
+            let is_adding = active_edit.is_some_and(|s| s.editing_index.is_none());
+
+            // Command list (each in a textbox-style container)
+            let mut commands_box = v_flex().gap_1();
+            if project.settings.workspace_init_commands.is_empty() && !is_adding {
+                commands_box = commands_box.child(
                     div()
                         .text_xs()
                         .text_color(t.text_muted)
@@ -419,71 +489,89 @@ impl WorkspaceView {
                 );
             } else {
                 for (i, cmd) in project.settings.workspace_init_commands.iter().enumerate() {
-                    let remove_repo = repo_root.clone();
-                    let cmd_index = i;
                     let cmd_row_id =
                         gpui::ElementId::Name(format!("cmd-{}-{}", project.display_name, i).into());
+                    let group_name: SharedString =
+                        format!("cmd-row-{}-{}", project.display_name, i).into();
 
-                    project_section = project_section.child(
-                        h_flex()
-                            .id(cmd_row_id)
-                            .group("cmd-row")
-                            .justify_between()
-                            .px_2()
-                            .py_1()
-                            .rounded(px(3.))
-                            .bg(t.bg_surface)
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_xs()
-                                    .text_color(t.text_secondary)
-                                    .overflow_hidden()
-                                    .child(cmd.clone()),
-                            )
-                            .child(
-                                div()
-                                    .id("remove-cmd-btn")
-                                    .cursor_pointer()
-                                    .px_1()
-                                    .text_xs()
-                                    .text_color(t.text_dim)
-                                    .invisible()
-                                    .group_hover("cmd-row", |style| style.visible())
-                                    .hover(|style| style.text_color(t.accent_red))
-                                    .on_click(cx.listener(move |this, _event, _window, cx| {
-                                        this.on_remove_init_command(
-                                            remove_repo.clone(),
-                                            cmd_index,
-                                            cx,
-                                        );
-                                    }))
-                                    .child(Icon::new(IconName::X).size(px(14.)).color(Color::Dim)),
-                            ),
-                    );
+                    // If we're editing this specific command, show the input inline
+                    if editing_index == Some(i) {
+                        let input = self.settings_input.as_ref().unwrap().input.clone();
+                        commands_box = commands_box.child(div().flex_1().min_w_0().child(input));
+                    } else {
+                        let edit_repo = repo_root.clone();
+                        let remove_repo = repo_root.clone();
+                        let cmd_index = i;
+                        let group_clone = group_name.clone();
+
+                        commands_box = commands_box.child(
+                            h_flex()
+                                .id(cmd_row_id)
+                                .group(group_name)
+                                .justify_between()
+                                .items_start()
+                                .px_2()
+                                .py(px(5.))
+                                .rounded(px(4.))
+                                .border_1()
+                                .border_color(t.border_default)
+                                .bg(t.bg_surface)
+                                .cursor_pointer()
+                                .hover(|style| style.border_color(t.text_dim))
+                                .on_click(cx.listener(move |this, _event, window, cx| {
+                                    this.on_start_edit_init_command(
+                                        edit_repo.clone(),
+                                        cmd_index,
+                                        window,
+                                        cx,
+                                    );
+                                }))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .text_xs()
+                                        .text_color(t.text_secondary)
+                                        .child(cmd.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .id("remove-cmd-btn")
+                                        .cursor_pointer()
+                                        .px_1()
+                                        .pt(px(1.))
+                                        .text_xs()
+                                        .text_color(t.text_dim)
+                                        .invisible()
+                                        .group_hover(group_clone, |style| style.visible())
+                                        .hover(|style| style.text_color(t.accent_red))
+                                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                                            this.on_remove_init_command(
+                                                remove_repo.clone(),
+                                                cmd_index,
+                                                cx,
+                                            );
+                                        }))
+                                        .child(
+                                            Icon::new(IconName::X).size(px(14.)).color(Color::Dim),
+                                        ),
+                                ),
+                        );
+                    }
                 }
             }
 
-            // Add command input or button
-            let is_editing = self
-                .settings_input
-                .as_ref()
-                .is_some_and(|s| s.repo_root == repo_root);
-
-            if is_editing {
+            // Add new command: show input or button
+            if is_adding {
                 let input = self.settings_input.as_ref().unwrap().input.clone();
-                project_section = project_section.child(
-                    h_flex()
-                        .mt_1()
-                        .gap_2()
-                        .child(div().flex_1().min_w_0().child(input)),
-                );
-            } else {
+                commands_box = commands_box.child(div().flex_1().min_w_0().child(input));
+            }
+
+            {
                 let add_repo = repo_root.clone();
                 let add_btn_id =
                     gpui::ElementId::Name(format!("add-cmd-{}", project.display_name).into());
-                project_section = project_section.child(
+                commands_box = commands_box.child(
                     div()
                         .id(add_btn_id)
                         .mt_1()
@@ -501,6 +589,8 @@ impl WorkspaceView {
                         .child("Add command"),
                 );
             }
+
+            project_section = project_section.child(commands_box);
 
             content = content.child(project_section);
         }

@@ -111,7 +111,10 @@ struct SessionCreate {
 struct SettingsEdit {
     repo_root: PathBuf,
     input: Entity<TextInput>,
+    /// `None` = adding a new command, `Some(i)` = editing command at index `i`.
+    editing_index: Option<usize>,
     _event_sub: Subscription,
+    _blur_sub: Subscription,
 }
 
 pub struct WorkspaceView {
@@ -268,7 +271,13 @@ impl WorkspaceView {
         }
     }
 
-    fn run_init_commands(&mut self, repo_root: &Path, worktree_path: &Path) {
+    fn run_init_commands(
+        &mut self,
+        repo_root: &Path,
+        worktree_path: &Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let commands = self
             .state
             .config
@@ -278,26 +287,65 @@ impl WorkspaceView {
             .map(|p| p.settings.workspace_init_commands.clone())
             .unwrap_or_default();
 
-        for cmd in &commands {
-            let result = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .current_dir(worktree_path)
-                .env("DIF_WORKTREE_DIR", worktree_path)
-                .env("DIF_REPO_DIR", repo_root)
-                .output();
-
-            match result {
-                Ok(output) if !output.status.success() => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    self.state.flash_error = Some(format!("Init command failed: {cmd}\n{stderr}"));
-                }
-                Err(error) => {
-                    self.state.flash_error = Some(format!("Init command failed: {cmd}\n{error}"));
-                }
-                _ => {}
-            }
+        if commands.is_empty() {
+            return;
         }
+
+        let wt = worktree_path.to_path_buf();
+        let repo = repo_root.to_path_buf();
+        let view = cx.entity().clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                // Use the user's login shell so tools like pnpm/node/etc. are on PATH.
+                // macOS GUI apps don't inherit the shell's PATH, and a bare `sh -c`
+                // won't source ~/.zshrc or ~/.bashrc.
+                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+
+                for cmd in &commands {
+                    let shell = shell.clone();
+                    let cmd = cmd.clone();
+                    let wt = wt.clone();
+                    let repo = repo.clone();
+                    let cmd_display = cmd.clone();
+
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            std::process::Command::new(&shell)
+                                .arg("-l")
+                                .arg("-c")
+                                .arg(&cmd)
+                                .current_dir(&wt)
+                                .env("DIF_WORKTREE_DIR", &wt)
+                                .env("DIF_REPO_DIR", &repo)
+                                .output()
+                        })
+                        .await;
+
+                    let error = match result {
+                        Ok(output) if !output.status.success() => {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            Some(format!("Init command failed: {cmd_display}\n{stderr}"))
+                        }
+                        Err(e) => Some(format!("Init command failed: {cmd_display}\n{e}")),
+                        _ => None,
+                    };
+
+                    if let Some(msg) = error {
+                        let view = view.clone();
+                        cx.update(|_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.flash_error = Some(msg);
+                                cx.notify();
+                            })
+                        })
+                        .ok();
+                        return;
+                    }
+                }
+            })
+            .detach();
     }
 
     fn selected_project_runtime(&self) -> Option<&ProjectRuntime> {

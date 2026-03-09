@@ -336,7 +336,7 @@ impl WorkspaceView {
                             .child("Dif"),
                     ),
             )
-            // Center: project name / branch
+            // Center: project name / branch / behind indicator
             .child(
                 h_flex()
                     .flex_1()
@@ -350,6 +350,28 @@ impl WorkspaceView {
                     .when_some(branch_name, |el, branch| {
                         el.child(div().text_color(t.text_dim).child("/"))
                             .child(div().text_color(t.text_muted).child(branch))
+                    })
+                    .when(branch_status.commits_behind > 0, |el| {
+                        let n = branch_status.commits_behind;
+                        let label = if n == 1 {
+                            "1 behind".to_string()
+                        } else {
+                            format!("{n} behind")
+                        };
+                        el.child(
+                            div()
+                                .id("update-from-main")
+                                .px_1()
+                                .rounded_sm()
+                                .text_xs()
+                                .text_color(t.accent_yellow)
+                                .cursor_pointer()
+                                .hover(|s| s.bg(t.hover_overlay))
+                                .on_click(cx.listener(|this, _event, window, cx| {
+                                    this.on_update_from_main(window, cx);
+                                }))
+                                .child(label),
+                        )
                     }),
             )
             // Right side: action + CI + PR + update + sidebar toggle

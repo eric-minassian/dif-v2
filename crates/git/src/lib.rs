@@ -120,8 +120,8 @@ pub(crate) fn default_branch(dir: &Path) -> String {
 }
 
 pub use commands::{
-    amend_selected, commit_selected, create_pr, disable_auto_merge, enable_auto_merge, force_push,
-    merge_pr_rebase, push,
+    abort_rebase, amend_selected, commit_selected, create_pr, disable_auto_merge,
+    enable_auto_merge, force_push, get_conflict_files, merge_pr_rebase, push, update_from_main,
 };
 pub use diff::compute_file_diff;
 pub use repo::{get_branch_name, is_valid_repo, normalize_repo_path};

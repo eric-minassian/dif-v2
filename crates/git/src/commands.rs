@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::repo::get_branch_name;
-use super::{run_gh, run_git, run_git_raw};
+use super::{default_branch, run_gh, run_git, run_git_raw};
 
 /// Stage the given files in the worktree.
 fn stage_files(worktree: &Path, files: &[String]) -> Result<(), String> {
@@ -66,4 +66,29 @@ pub fn enable_auto_merge(worktree: &Path) -> Result<(), String> {
 pub fn disable_auto_merge(worktree: &Path) -> Result<(), String> {
     run_gh(worktree, &["pr", "merge", "--disable-auto"])?;
     Ok(())
+}
+
+/// Fetch latest from the default branch and rebase the current branch onto it.
+pub fn update_from_main(worktree: &Path) -> Result<(), String> {
+    let default = default_branch(worktree);
+    let fetch_branch = default.strip_prefix("origin/").unwrap_or(&default);
+    run_git(worktree, &["fetch", "origin", fetch_branch])?;
+    run_git(worktree, &["rebase", &default])?;
+    Ok(())
+}
+
+/// Abort an in-progress rebase.
+pub fn abort_rebase(worktree: &Path) -> Result<(), String> {
+    run_git(worktree, &["rebase", "--abort"])?;
+    Ok(())
+}
+
+/// Return file paths that have merge conflicts (unmerged entries).
+pub fn get_conflict_files(worktree: &Path) -> Vec<String> {
+    run_git(worktree, &["diff", "--name-only", "--diff-filter=U"])
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect()
 }

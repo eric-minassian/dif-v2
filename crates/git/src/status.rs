@@ -255,6 +255,16 @@ fn commits_ahead_of(worktree: &Path, default_branch: &str) -> u32 {
     .unwrap_or(0)
 }
 
+fn commits_behind_of(worktree: &Path, default_branch: &str) -> u32 {
+    run_git(
+        worktree,
+        &["rev-list", "--count", &format!("HEAD..{default_branch}")],
+    )
+    .ok()
+    .and_then(|s| s.parse().ok())
+    .unwrap_or(0)
+}
+
 pub fn check_repo_capabilities(worktree: &Path) -> RepoCapabilities {
     try_run_gh(
         worktree,
@@ -279,16 +289,18 @@ pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
     let default_short = default.strip_prefix("origin/").unwrap_or(&default);
 
     // Local git operations in parallel
-    let (commits_ahead, branch_name) = std::thread::scope(|s| {
+    let (commits_ahead, commits_behind, branch_name) = std::thread::scope(|s| {
         let t1 = s.spawn(|| commits_ahead_of(worktree, &default));
-        let t2 = s.spawn(|| super::get_branch_name(worktree).ok());
-        (t1.join().unwrap(), t2.join().unwrap())
+        let t2 = s.spawn(|| commits_behind_of(worktree, &default));
+        let t3 = s.spawn(|| super::get_branch_name(worktree).ok());
+        (t1.join().unwrap(), t2.join().unwrap(), t3.join().unwrap())
     });
 
     // On the default branch there's no PR to check — skip GitHub API calls
     if branch_name.as_deref() == Some(default_short) {
         return BranchStatus {
             commits_ahead,
+            commits_behind,
             branch_name,
             ..Default::default()
         };
@@ -300,6 +312,7 @@ pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
     match pr_data {
         Some(data) => BranchStatus {
             commits_ahead,
+            commits_behind,
             pr_url: Some(data.url),
             pr_merged: data.merged,
             pr_number: data.number,
@@ -310,6 +323,7 @@ pub fn collect_branch_status(worktree: &Path) -> BranchStatus {
         },
         None => BranchStatus {
             commits_ahead,
+            commits_behind,
             branch_name,
             ..Default::default()
         },

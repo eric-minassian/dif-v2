@@ -1,3 +1,4 @@
+use crate::runtime::RebaseConflict;
 use git::BranchStatus;
 use ui::prelude::*;
 use ui::{PanelSide, panel};
@@ -16,6 +17,84 @@ impl WorkspaceView {
         div().into_any_element()
     }
 
+    fn render_conflict_banner(
+        &self,
+        conflict: &RebaseConflict,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let t = theme();
+
+        v_flex()
+            .mx_3()
+            .mt_1()
+            .px_2()
+            .py_2()
+            .gap_2()
+            .rounded_sm()
+            .bg(t.error_bg)
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(t.accent_yellow)
+                    .child("Rebase conflict"),
+            )
+            .child(
+                v_flex().gap(px(2.)).children(
+                    conflict
+                        .conflict_files
+                        .iter()
+                        .map(|f| {
+                            div()
+                                .text_xs()
+                                .text_color(t.text_secondary)
+                                .child(f.clone())
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .id("copy-conflict-prompt")
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_xs()
+                            .text_color(t.accent_blue)
+                            .cursor_pointer()
+                            .bg(t.bg_elevated)
+                            .hover(|s| s.bg(t.bg_elevated_hover))
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.on_copy_conflict_prompt(cx);
+                                this.state.flash_error =
+                                    Some("Conflict prompt copied to clipboard".into());
+                                cx.notify();
+                            }))
+                            .child("Copy Prompt"),
+                    )
+                    .child(
+                        div()
+                            .id("abort-rebase")
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_xs()
+                            .text_color(t.accent_red)
+                            .cursor_pointer()
+                            .bg(t.bg_elevated)
+                            .hover(|s| s.bg(t.bg_elevated_hover))
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.on_abort_rebase(window, cx);
+                            }))
+                            .child("Abort Rebase"),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn render_changes_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = theme();
         let project_runtime = self.selected_project_runtime();
@@ -24,6 +103,7 @@ impl WorkspaceView {
             .map(|snapshot| snapshot.changes.as_slice())
             .unwrap_or(&[]);
         let error = snapshot.and_then(|snapshot| snapshot.last_error.as_ref());
+        let rebase_conflict = project_runtime.and_then(|rt| rt.rebase_conflict.clone());
 
         let empty_staged = std::collections::HashSet::new();
         let staged_files = project_runtime
@@ -37,6 +117,9 @@ impl WorkspaceView {
         v_flex()
             .flex_1()
             .min_h_0()
+            .when_some(rebase_conflict, |p, conflict| {
+                p.child(self.render_conflict_banner(&conflict, cx))
+            })
             .when_some(error, |p, message| {
                 p.child(
                     div()

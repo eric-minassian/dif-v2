@@ -44,10 +44,16 @@ const SECTIONS: &[KeybindingSection] = &[
     },
     KeybindingSection {
         title: "GIT ACTIONS",
-        entries: &[KeybindingEntry {
-            keys: "Cmd + Enter",
-            description: "Run current git action (commit, amend, create PR, rebase)",
-        }],
+        entries: &[
+            KeybindingEntry {
+                keys: "Cmd + Enter",
+                description: "Run current git action (commit, amend, create PR, rebase)",
+            },
+            KeybindingEntry {
+                keys: "Cmd + Shift + U",
+                description: "Update from main (rebase onto default branch)",
+            },
+        ],
     },
     KeybindingSection {
         title: "SESSIONS",

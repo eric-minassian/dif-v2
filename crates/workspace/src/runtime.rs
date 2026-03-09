@@ -63,6 +63,13 @@ impl Default for SessionRuntime {
     }
 }
 
+/// Details about an in-progress rebase conflict.
+#[derive(Clone, Debug)]
+pub struct RebaseConflict {
+    pub conflict_files: Vec<String>,
+    pub prompt: String,
+}
+
 #[derive(Default)]
 pub struct ProjectRuntime {
     pub session_runtimes: HashMap<String, SessionRuntime>,
@@ -71,6 +78,7 @@ pub struct ProjectRuntime {
     pub branch_status: BranchStatus,
     pub repo_capabilities: RepoCapabilities,
     pub action_phase: ActionPhase,
+    pub rebase_conflict: Option<RebaseConflict>,
 }
 
 #[derive(Default)]

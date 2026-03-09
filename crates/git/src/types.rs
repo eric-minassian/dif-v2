@@ -103,6 +103,7 @@ impl Default for RepoCapabilities {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BranchStatus {
     pub commits_ahead: u32,
+    pub commits_behind: u32,
     pub pr_url: Option<String>,
     pub pr_merged: bool,
     pub pr_number: Option<u32>,

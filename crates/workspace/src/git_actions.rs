@@ -1,4 +1,4 @@
-use crate::runtime::ActionPhase;
+use crate::runtime::{ActionPhase, RebaseConflict};
 use git::CheckBucket;
 use git::conventional::is_conventional_commit;
 use ui::prelude::*;
@@ -377,6 +377,158 @@ impl WorkspaceView {
             .detach();
     }
 
+    pub(crate) fn on_update_from_main(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+        runtime.action_phase = ActionPhase::Working("Updating from main...".into());
+        runtime.rebase_conflict = None;
+        cx.notify();
+
+        let working_dir = self.working_dir(&repo);
+        let view = cx.entity().clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = working_dir.clone();
+                        async move { git::update_from_main(&dir) }
+                    })
+                    .await;
+
+                match result {
+                    Ok(()) => {
+                        // Rebase succeeded — force push if there's already a remote branch
+                        let push_result = cx
+                            .background_executor()
+                            .spawn({
+                                let dir = working_dir.clone();
+                                async move { git::force_push(&dir) }
+                            })
+                            .await;
+
+                        cx.update(|window, cx| {
+                            view.update(cx, |this, cx| {
+                                if let Some(rt) = this.state.runtimes.get_mut(&repo) {
+                                    match push_result {
+                                        Ok(()) => rt.action_phase = ActionPhase::Idle,
+                                        Err(e) => {
+                                            rt.action_phase =
+                                                ActionPhase::Error(format!("Push: {e}"));
+                                        }
+                                    }
+                                }
+                                this.start_git_poll(repo.clone(), window, cx);
+                                cx.notify();
+                            })
+                        })
+                        .ok();
+                    }
+                    Err(_) => {
+                        // Rebase failed — check for conflicts
+                        let conflict_files = cx
+                            .background_executor()
+                            .spawn({
+                                let dir = working_dir.clone();
+                                async move { git::get_conflict_files(&dir) }
+                            })
+                            .await;
+
+                        cx.update(|window, cx| {
+                            view.update(cx, |this, cx| {
+                                if let Some(rt) = this.state.runtimes.get_mut(&repo) {
+                                    if conflict_files.is_empty() {
+                                        rt.action_phase = ActionPhase::Error(
+                                            "Rebase failed (no conflicts detected)".into(),
+                                        );
+                                    } else {
+                                        let prompt =
+                                            generate_conflict_prompt(&working_dir, &conflict_files);
+                                        rt.rebase_conflict = Some(RebaseConflict {
+                                            conflict_files: conflict_files.clone(),
+                                            prompt,
+                                        });
+                                        rt.action_phase = ActionPhase::Idle;
+                                    }
+                                }
+                                this.start_git_poll(repo.clone(), window, cx);
+                                cx.notify();
+                            })
+                        })
+                        .ok();
+                    }
+                }
+            })
+            .detach();
+    }
+
+    pub(crate) fn on_abort_rebase(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.state.selected_repo.clone() else {
+            return;
+        };
+        let Some(runtime) = self.state.runtimes.get_mut(&repo) else {
+            return;
+        };
+        if matches!(runtime.action_phase, ActionPhase::Working(_)) {
+            return;
+        }
+        runtime.action_phase = ActionPhase::Working("Aborting rebase...".into());
+        cx.notify();
+
+        let working_dir = self.working_dir(&repo);
+        let view = cx.entity().clone();
+
+        window
+            .spawn(cx, async move |cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let dir = working_dir.clone();
+                        async move { git::abort_rebase(&dir) }
+                    })
+                    .await;
+
+                cx.update(|window, cx| {
+                    view.update(cx, |this, cx| {
+                        if let Some(rt) = this.state.runtimes.get_mut(&repo) {
+                            match result {
+                                Ok(()) => {
+                                    rt.rebase_conflict = None;
+                                    rt.action_phase = ActionPhase::Idle;
+                                }
+                                Err(e) => {
+                                    rt.action_phase =
+                                        ActionPhase::Error(format!("Abort rebase: {e}"));
+                                }
+                            }
+                        }
+                        this.start_git_poll(repo.clone(), window, cx);
+                        cx.notify();
+                    })
+                })
+                .ok();
+            })
+            .detach();
+    }
+
+    pub(crate) fn on_copy_conflict_prompt(&mut self, cx: &mut Context<Self>) {
+        let Some(runtime) = self.selected_project_runtime() else {
+            return;
+        };
+        let Some(conflict) = &runtime.rebase_conflict else {
+            return;
+        };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(conflict.prompt.clone()));
+    }
+
     pub(crate) fn on_toggle_pr_auto_merge(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(repo) = self.state.selected_repo.clone() else {
             return;
@@ -438,4 +590,27 @@ impl WorkspaceView {
             })
             .detach();
     }
+}
+
+fn generate_conflict_prompt(worktree_path: &std::path::Path, conflict_files: &[String]) -> String {
+    let dir = worktree_path.display();
+    let files_list = conflict_files
+        .iter()
+        .map(|f| format!("- {f}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let files_space = conflict_files.join(" ");
+
+    format!(
+        "I'm working in a git worktree at `{dir}`. \
+         A rebase onto the default branch has resulted in merge conflicts \
+         in the following files:\n\n\
+         {files_list}\n\n\
+         Please:\n\
+         1. Read each conflicted file\n\
+         2. Resolve the merge conflicts (keeping functionality from both sides where possible)\n\
+         3. Stage the resolved files: `git add {files_space}`\n\
+         4. Continue the rebase: `git rebase --continue`\n\
+         5. Force push: `git push --force-with-lease`"
+    )
 }

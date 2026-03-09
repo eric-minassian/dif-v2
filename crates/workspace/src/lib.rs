@@ -83,6 +83,9 @@ actions!(
         PrevTerminalTab,
         ToggleHelp,
         RunGitAction,
+        UpdateFromMain,
+        AbortRebase,
+        CopyConflictPrompt,
         Quit,
         HideApp,
         HideOtherApps,
@@ -571,6 +574,15 @@ impl WorkspaceView {
         }))
         .on_action(cx.listener(|this, _: &RunGitAction, window, cx| {
             this.on_run_git_action(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &UpdateFromMain, window, cx| {
+            this.on_update_from_main(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &AbortRebase, window, cx| {
+            this.on_abort_rebase(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &CopyConflictPrompt, _window, cx| {
+            this.on_copy_conflict_prompt(cx);
         }))
         .on_action(cx.listener(|this, _: &ToggleHelp, _window, cx| {
             this.state.viewing_help = !this.state.viewing_help;

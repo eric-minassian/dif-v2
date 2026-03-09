@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/eric-minassian/dif-v2/compare/v0.15.3...v0.16.0) (2026-03-09)
+
+
+### Features
+
+* improved syncing ([970bc62](https://github.com/eric-minassian/dif-v2/commit/970bc628715cb949ae7f5d50d18a0199b75730d7))
+
 ## [0.15.3](https://github.com/eric-minassian/dif-v2/compare/v0.15.2...v0.15.3) (2026-03-08)
 
 

@@ -6,6 +6,71 @@ use ui::{PanelSide, panel};
 use crate::WorkspaceView;
 
 impl WorkspaceView {
+    fn render_staged_summary(
+        &self,
+        changes: &[git::GitChange],
+        staged_files: &std::collections::HashSet<String>,
+    ) -> Option<AnyElement> {
+        if staged_files.is_empty() {
+            return None;
+        }
+
+        let t = theme();
+        let mut staged_count = 0usize;
+        let mut additions = 0u32;
+        let mut deletions = 0u32;
+        let mut has_additions = false;
+        let mut has_deletions = false;
+
+        for change in changes {
+            if !staged_files.contains(&change.path) {
+                continue;
+            }
+
+            staged_count += 1;
+
+            if let Some(count) = change.additions {
+                additions = additions.saturating_add(count);
+                has_additions = true;
+            }
+            if let Some(count) = change.deletions {
+                deletions = deletions.saturating_add(count);
+                has_deletions = true;
+            }
+        }
+
+        if staged_count == 0 {
+            return None;
+        }
+
+        let label = if staged_count == 1 {
+            "1 staged file".to_string()
+        } else {
+            format!("{staged_count} staged files")
+        };
+
+        let mut stat = DiffStat::new();
+        if has_additions {
+            stat = stat.additions(additions);
+        }
+        if has_deletions {
+            stat = stat.deletions(deletions);
+        }
+
+        Some(
+            h_flex()
+                .px_3()
+                .py_2()
+                .justify_between()
+                .items_center()
+                .border_b_1()
+                .border_color(t.border_subtle)
+                .child(div().text_xs().text_color(t.text_muted).child(label))
+                .child(stat)
+                .into_any_element(),
+        )
+    }
+
     pub(crate) fn render_right_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         panel(PanelSide::Right)
             .w(px(self.state.right_sidebar_width))
@@ -133,6 +198,10 @@ impl WorkspaceView {
                         .child(message.clone()),
                 )
             })
+            .when_some(
+                self.render_staged_summary(changes, staged_files),
+                |panel, summary| panel.child(summary),
+            )
             .child(
                 div()
                     .id("changes-list")

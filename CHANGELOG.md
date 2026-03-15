@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/eric-minassian/dif-v2/compare/v0.16.0...v0.17.0) (2026-03-15)
+
+
+### Features
+
+* git +- count ([a4d9a37](https://github.com/eric-minassian/dif-v2/commit/a4d9a37378a34f1ad5616ae8cf26010d03c09669))
+
 ## [0.16.0](https://github.com/eric-minassian/dif-v2/compare/v0.15.3...v0.16.0) (2026-03-09)
 
 
